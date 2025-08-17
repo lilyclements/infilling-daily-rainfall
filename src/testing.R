@@ -64,23 +64,26 @@ dodoma <- dodoma %>%
   mutate(year = year(date), month = month(date), 
          day = day(date),
          rainday = rain > 0.85,
-         rainday_lag = dplyr::lag(rainday, default = NA)) %>%
-  group_by(month) %>%
+         rainday_lag = dplyr::lag(rainday, default = NA),
+         season = ifelse(month %in% 5:10, "dry", as.character(month)),
+         season = factor(season, levels = c("dry", 11:12, 1:4))) %>%
+  group_by(season) %>%
   mutate(t_tamsat = thresh(rain, tamsat_rain),
          tamsat_rainday = tamsat_rain > t_tamsat,
          tamsat_rainday_lag = dplyr::lag(tamsat_rainday, default = NA)) %>%
   filter(year >= 1983)
 
 dodoma_month <- dodoma %>% 
-  group_by(month) %>%
+  group_by(season) %>%
   filter(!is.na(rain) & !is.na(tamsat_rain)) %>%
-  summarise(p_rain = mean(rainday),
-            p_rain_tamsat = mean(tamsat_rainday),
-            p_rain_w = mean(rainday[rainday_lag], na.rm = TRUE),
-            p_rain_w_tamsat = mean(tamsat_rainday[tamsat_rainday_lag], 
+  summarise(n = n(),
+            n_rain = sum(rainday),
+            n_rain_tamsat = sum(tamsat_rainday),
+            n_rain_w = sum(rainday[rainday_lag], na.rm = TRUE),
+            n_rain_w_tamsat = sum(tamsat_rainday[tamsat_rainday_lag], 
                                    na.rm = TRUE),
-            p_rain_d = mean(rainday[!rainday_lag], na.rm = TRUE),
-            p_rain_d_tamsat = mean(tamsat_rainday[!tamsat_rainday_lag], 
+            n_rain_d = sum(rainday[!rainday_lag], na.rm = TRUE),
+            n_rain_d_tamsat = sum(tamsat_rainday[!tamsat_rainday_lag], 
                                    na.rm = TRUE))
 
 source(here("src", "methods.R"))

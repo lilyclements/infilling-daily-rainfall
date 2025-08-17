@@ -87,13 +87,24 @@ conditional_wd <- function(x, t_w, t_d, t0, y0) {
 }
 
 markov_thresholds <- function(data, obs_col = "obs", est_col = "est", 
-                              date_col = "date", 
+                              date_col = "date", season_col,
                               obs_thr = 0.85, tol = 1e-3, max_it = 20) {
   
   data[["year"]] <- lubridate::year(data[[date_col]])
-  data[["mm"]] <- lubridate::month(data[[date_col]])
+  # NExT rename season_col to "season" in all cases for simplicity
+  if (missing(season_col)) {
+    data[["season"]] <- factor(lubridate::month(data[[date_col]]))
+  } else {
+    data[["season"]] <- data[[season_col]]
+  }
+  season_col <- "season"
   data[["day"]] <- lubridate::day(data[[date_col]])
-  data[["ym"]] <- paste(data[["year"]], data[["mm"]], sep = "-")
+  # Not needed?
+  # season_list <- apply(tidyr::crossing(unique(data[["year"]]), 
+  #                                      levels(data[[season_col]])), 
+  #                      1, paste, collapse="-")
+  # data[["ym"]] <- factor(paste(data[["year"]], data[[season_col]], sep = "-"),
+  #                        levels = season_list)
   obs <- data[[obs_col]]
   est <- data[[est_col]]
   # logical wet/dry from observations
@@ -102,7 +113,7 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
   data[["obs_wd_prev"]] <- dplyr::lag(data[["obs_wd"]])
   
   results <- tibble(
-    month = numeric(),
+    season = character(),
     t_w = numeric(),
     t_d = numeric(),
     p_obs = numeric(),
@@ -116,8 +127,8 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
     n_days = integer()
   )
 
-  for (m in 1:12) {
-    data_m <- dplyr::filter(data, mm == m)
+  for (m in levels(data[[season_col]])) {
+    data_m <- dplyr::filter(data, season == m)
     est_m <- data_m[[est_col]]
     obs_wd <- data_m[["obs_wd"]]
     obs_wd_prev <- data_m[["obs_wd_prev"]]
@@ -136,9 +147,8 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
     converged <- FALSE
     # Iterate to converge to target probabilities
     for (i in 1:max_it) {
-      #TODO This needs to be done per year-month block
       res <- data_m %>%
-        group_by(year, month) %>%
+        group_by(year, season) %>%
         group_modify(~{
           y0 <- .x$obs_wd_prev[1]
           if (is.na(y0)) y0 <- FALSE
@@ -172,7 +182,7 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
                       probs = 1 - p_d_obs, na.rm = TRUE, names = FALSE)
     }
     results <- results %>% 
-      tibble::add_row(month = m, t_w = t_w, t_d = t_d, p_obs = p_obs, 
+      tibble::add_row(season = m, t_w = t_w, t_d = t_d, p_obs = p_obs, 
                       p_est = p_est, p_w_obs = p_w_obs, p_w_est = p_w_est, 
                       p_d_obs = p_d_obs, p_d_est = p_d_est, 
                       converged = converged,
