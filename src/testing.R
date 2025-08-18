@@ -87,4 +87,8 @@ dodoma_month <- dodoma %>%
                                    na.rm = TRUE))
 
 source(here("src", "methods.R"))
-res <- markov_thresholds(dodoma, "rain", "tamsat_rain", tol = 1e-2, max_it = 50)
+res <- markov_thresholds(dodoma, "rain", "tamsat_rain", season_col = "season", 
+                         tol = 1e-2, max_it = 50)
+
+
+zimbabwe <- readr::read_csv(here("data", "zim_five_stations.csv"))

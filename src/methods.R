@@ -143,10 +143,12 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
                    names = FALSE)
     t_d <- t0
     t_w <- t0
-
+    print(m)
     converged <- FALSE
     # Iterate to converge to target probabilities
     for (i in 1:max_it) {
+      print(t_w)
+      print(t_d)
       res <- data_m %>%
         group_by(year, season) %>%
         group_modify(~{
@@ -160,26 +162,34 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
       p_est <- mean(res$est_wd, na.rm = TRUE)
       p_w_est <- mean(res$est_wd[res$est_wd_prev], na.rm = TRUE)
       p_d_est <- mean(res$est_wd[!res$est_wd_prev], na.rm = TRUE)
-      
+      print(abs(p_w_est - p_w_obs))
+      print(abs(p_d_est - p_d_obs))
+      print(sum(res$est_wd_prev, na.rm = TRUE))
+      print(sum(!res$est_wd_prev, na.rm = TRUE))
       # Compare with target probabilities and stop if sufficiently converged
-      # print(i)
-      # print(length(res$est_wd[res$est_wd_prev]))
-      # print(length(res$est_wd[!res$est_wd_prev]))
-      # print(p_w_est)
-      # print(p_w_obs)
-      # print(p_d_est)
-      # print(p_d_obs)
-      if (is.na(p_w_est) || is.na(p_w_obs) || is.na(p_d_est) || is.na(p_d_obs)) break
-      else if (abs(p_w_est - p_w_obs) < tol && abs(p_d_est - p_d_obs) < tol) {
+      # Use a tolerance based on number of observations
+      # TODO If t0 = 0 then separate case, may only be able to have
+      # one of t_w or t_d > 0. Should converge if one probability is close.
+      tol_w <- 1 / max(sum(res$est_wd_prev, na.rm = TRUE), 1)
+      tol_d <- 1 / max(sum(!res$est_wd_prev, na.rm = TRUE), 1)
+      if (is.na(p_w_est) || is.na(p_w_obs) || 
+          is.na(p_d_est) || is.na(p_d_obs)) break
+      else if (abs(p_w_est - p_w_obs) < max(tol, tol_w) && 
+               abs(p_d_est - p_d_obs) < max(tol, tol_d)) {
         converged <- TRUE
         break
       }
       
       # Update thresholds based on current wet/dry and target probabilities
-      t_w <- quantile(res[[est_col]][res$est_wd_prev],
-                      probs = 1 - p_w_obs, na.rm = TRUE, names = FALSE)
-      t_d <- quantile(res[[est_col]][!res$est_wd_prev],
-                      probs = 1 - p_d_obs, na.rm = TRUE, names = FALSE)
+      if (i != max_it) {
+        rho <- 0.4
+        t_w_new <- quantile(res[[est_col]][res$est_wd_prev],
+                            probs = 1 - p_w_obs, na.rm = TRUE, names = FALSE)
+        t_w <- (1 - rho) * t_w + rho * t_w_new
+        t_d_new <- quantile(res[[est_col]][!res$est_wd_prev],
+                            probs = 1 - p_d_obs, na.rm = TRUE, names = FALSE)
+        t_d <- (1 - rho) * t_d + rho * t_d_new
+      }
     }
     results <- results %>% 
       tibble::add_row(season = m, t_w = t_w, t_d = t_d, p_obs = p_obs, 
@@ -191,52 +201,3 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
   }
   results
 }
-
-# Conditional Threshold Calibration
-
-conditional_threshold_calibration <- function(obs, p_wd, p_ww, rainday0 = FALSE, 
-                                              p_i, max_it = 20, tol = 1e-3) {
-  
-  thresh_i <- quantile(obs, probs = 1 - p_i, names = FALSE)
-  rainday <- logical(length(obs))
-  rainday[1] <- rainday0 && X[1] > thresh_i
-  
-  thresh_wd <- thresh_i
-  thresh_ww <- thresh_i
-  
-  for (i in 1:max_it) {
-    print(i)
-    # Calculate rainday based on current thresholds
-    for (i in 2:length(obs)) {
-      rainday[i] <- 
-        rainday[i - 1] && obs[i] > thresh_ww || 
-        !rainday[i - 1] && obs[i] > thresh_wd
-    }
-    
-    # Collect obs[i] based on rainday[i - 1]
-    prev_rainday <- rainday[-length(obs)]
-    curr_obs <- obs[-1]
-    
-    obs_dry <- curr_obs[!prev_rainday]
-    obs_wet <- curr_obs[prev_rainday]
-    
-    if (length(obs_dry) == 0 || length(obs_wet) == 0) break
-    
-    # Estimate new thresholds
-    new_thresh_wd <- quantile(obs_dry, probs = 1 - p_wd, names = FALSE)
-    new_thresh_ww <- quantile(obs_wet, probs = 1 - p_ww, names = FALSE)
-    
-    # Check for convergence
-    if (abs(new_thresh_wd - thresh_wd) < tol && 
-        abs(new_thresh_ww - thresh_ww) < tol) break
-
-    print(new_thresh_wd)
-    print(new_thresh_ww)
-    
-    thresh_wd <- new_thresh_wd
-    thresh_ww <- new_thresh_ww
-  }
-  
-  return(list(thresh_wd = thresh_wd, thresh_ww = thresh_ww, rainday = rainday))
-}
-
