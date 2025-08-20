@@ -87,25 +87,18 @@ conditional_wd <- function(x, t_w, t_d, t0, y0) {
 }
 
 markov_thresholds <- function(data, obs_col = "obs", est_col = "est", 
-                              date_col = "date", season_col,
+                              date_col = "date", season_col, station_col,
                               obs_thr = 0.85, tol = 1e-3, max_it = 20, 
                               n_conv = 5, damping = 0.4) {
   
   data[["year"]] <- lubridate::year(data[[date_col]])
-  # NExT rename season_col to "season" in all cases for simplicity
   if (missing(season_col)) {
     data[["season"]] <- factor(lubridate::month(data[[date_col]]))
   } else {
-    data[["season"]] <- data[[season_col]]
+    data <- data %>% rename(season = season_col)
   }
   season_col <- "season"
   data[["day"]] <- lubridate::day(data[[date_col]])
-  # Not needed?
-  # season_list <- apply(tidyr::crossing(unique(data[["year"]]), 
-  #                                      levels(data[[season_col]])), 
-  #                      1, paste, collapse="-")
-  # data[["ym"]] <- factor(paste(data[["year"]], data[[season_col]], sep = "-"),
-  #                        levels = season_list)
   obs <- data[[obs_col]]
   est <- data[[est_col]]
   # logical wet/dry from observations
@@ -114,6 +107,7 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
   data[["obs_wd_prev"]] <- dplyr::lag(data[["obs_wd"]])
   
   results <- tibble(
+    station = character(),
     season = character(),
     t_w = numeric(),
     t_d = numeric(),
@@ -128,105 +122,116 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
     iterations = integer(),
     n_days = integer()
   )
-
-  for (m in levels(data[[season_col]])) {
-    data_m <- dplyr::filter(data, season == m)
-    est_m <- data_m[[est_col]]
-    obs_wd <- data_m[["obs_wd"]]
-    obs_wd_prev <- data_m[["obs_wd_prev"]]
-    
-    # Target probabilities
-    p_obs <- mean(obs_wd, na.rm = TRUE)
-    p_w_obs <- mean(obs_wd[obs_wd_prev], na.rm = TRUE)
-    p_d_obs <- mean(obs_wd[!obs_wd_prev], na.rm = TRUE)
-    
-    # Initial threshold based on p_obs
-    t0 <- quantile(est_m, probs = 1 - p_obs, na.rm = TRUE, 
-                   names = FALSE)
-    t_d <- t0
-    t_w <- t0
-    print(m)
-    # Set to TRUE if probabilities converge to within tolerance of targets
-    converged <- FALSE
-    # Set to TRUE if probabilities converged to a value but not within tolerance
-    # of targets
-    within_tol <- FALSE
-    n_same <- 0
-    # Iterate to converge to target probabilities
-    for (i in 1:max_it) {
-      print(t_w)
-      print(t_d)
-      res <- data_m %>%
-        group_by(year, season) %>%
-        group_modify(~{
-          y0 <- .x$obs_wd_prev[1]
-          if (is.na(y0)) y0 <- FALSE
-          y  <- conditional_wd(.x[[est_col]], t_w, t_d, t0, y0)
-          tibble(.x, est_wd = y, est_wd_prev = dplyr::lag(y, default = y0))
-        }) %>%
-        ungroup()
-      # Update probabilities
-      p_est_new <- mean(res$est_wd, na.rm = TRUE)
-      p_w_est_new <- mean(res$est_wd[res$est_wd_prev], na.rm = TRUE)
-      p_d_est_new <- mean(res$est_wd[!res$est_wd_prev], na.rm = TRUE)
-      if (i > 1) {
-        diff_p <- abs(p_est_new - p_est)
-        diff_p_w <- abs(p_w_est_new - p_w_est)
-        diff_p_d <- abs(p_d_est_new - p_d_est)
-      }
-      p_est <- p_est_new
-      p_w_est <- p_w_est_new
-      p_d_est <- p_d_est_new
-      print(abs(p_w_est - p_w_obs))
-      print(abs(p_d_est - p_d_obs))
-      print(sum(res$est_wd_prev, na.rm = TRUE))
-      print(sum(!res$est_wd_prev, na.rm = TRUE))
-      if (i > 1) {
-        print(diff_p_w)
-        print(diff_p_d)
-      }
-      # Compare with target probabilities and stop if sufficiently converged
-      # Use a tolerance based on number of observations
-      # TODO If t0 = 0 then separate case, may only be able to have
-      # one of t_w or t_d > 0. Should converge if one probability is close.
-      tol_w <- 1 / max(sum(res$est_wd_prev, na.rm = TRUE), 1)
-      tol_d <- 1 / max(sum(!res$est_wd_prev, na.rm = TRUE), 1)
-      tol_diff_w <- tol_w / 2
-      tol_diff_d <- tol_d / 2
-      if (i > 1 && diff_p_w < tol_diff_w && diff_p_d < tol_diff_d) {
-        n_same <- n_same + 1
-      }
-      if (is.na(p_w_est) || is.na(p_w_obs) || 
-          is.na(p_d_est) || is.na(p_d_obs)) break
-      # Stop if probabilities are within tolerance of targets or
-      # if probabilities are converging within a tolerance
-      else if ((abs(p_w_est - p_w_obs) < max(tol, tol_w) && 
-               abs(p_d_est - p_d_obs) < max(tol, tol_d))) {
-        converged <- TRUE
-        break
-      } else if (n_same >= n_conv) {
-        converged <- TRUE
-        within_tol <- TRUE
-        break
-      }
+  if (!missing(station_col)) {
+    stations <- unique(data[[station_col]])
+    data <- data %>% rename(station = station_col)
+    station_col <- "station"
+  } else stations <- NA
+  
+  for (s in stations) {
+    for (m in levels(data[[season_col]])) {
+      if (!is.na(stations)) data_m <- dplyr::filter(data, station == s & season == m)
+      else data_m <- dplyr::filter(data, season == m)
+      est_m <- data_m[[est_col]]
+      obs_wd <- data_m[["obs_wd"]]
+      obs_wd_prev <- data_m[["obs_wd_prev"]]
       
-      # Update thresholds based on current wet/dry and target probabilities
-      if (i != max_it) {
-        t_w_new <- quantile(res[[est_col]][res$est_wd_prev],
-                            probs = 1 - p_w_obs, na.rm = TRUE, names = FALSE)
-        t_w <- (1 - damping) * t_w + damping * t_w_new
-        t_d_new <- quantile(res[[est_col]][!res$est_wd_prev],
-                            probs = 1 - p_d_obs, na.rm = TRUE, names = FALSE)
-        t_d <- (1 - damping) * t_d + damping * t_d_new
+      # Target probabilities
+      p_obs <- mean(obs_wd, na.rm = TRUE)
+      p_w_obs <- mean(obs_wd[obs_wd_prev], na.rm = TRUE)
+      p_d_obs <- mean(obs_wd[!obs_wd_prev], na.rm = TRUE)
+      
+      # Initial threshold based on p_obs
+      t0 <- quantile(est_m, probs = 1 - p_obs, na.rm = TRUE, 
+                     names = FALSE)
+      t_d <- t0
+      t_w <- t0
+      print(m)
+      # Set to TRUE if probabilities converged to within tolerance of targets
+      converged <- FALSE
+      # Set to TRUE if probabilities converged to a value but not within tolerance
+      # of targets
+      within_tol <- FALSE
+      n_same <- 0
+      # Iterate to converge to target probabilities
+      for (i in 1:max_it) {
+        print(t_w)
+        print(t_d)
+        res <- data_m %>%
+          group_by(year, season) %>%
+          group_modify(~{
+            y0 <- .x$obs_wd_prev[1]
+            if (is.na(y0)) y0 <- FALSE
+            y  <- conditional_wd(.x[[est_col]], t_w, t_d, t0, y0)
+            tibble(.x, est_wd = y, est_wd_prev = dplyr::lag(y, default = y0))
+          }) %>%
+          ungroup()
+        # Update probabilities
+        p_est_new <- mean(res$est_wd, na.rm = TRUE)
+        p_w_est_new <- mean(res$est_wd[res$est_wd_prev], na.rm = TRUE)
+        p_d_est_new <- mean(res$est_wd[!res$est_wd_prev], na.rm = TRUE)
+        # Calculate difference between previous probabilities 
+        # if not first iteration
+        if (i > 1) {
+          diff_p <- abs(p_est_new - p_est)
+          diff_p_w <- abs(p_w_est_new - p_w_est)
+          diff_p_d <- abs(p_d_est_new - p_d_est)
+        }
+        p_est <- p_est_new
+        p_w_est <- p_w_est_new
+        p_d_est <- p_d_est_new
+        print(abs(p_w_est - p_w_obs))
+        print(abs(p_d_est - p_d_obs))
+        print(sum(res$est_wd_prev, na.rm = TRUE))
+        print(sum(!res$est_wd_prev, na.rm = TRUE))
+        if (i > 1) {
+          print(diff_p_w)
+          print(diff_p_d)
+        }
+        # Compare with target probabilities and stop if sufficiently converged
+        # Use a tolerance based on number of observations
+        tol_w <- 1 / max(sum(res$est_wd_prev, na.rm = TRUE), 1)
+        tol_d <- 1 / max(sum(!res$est_wd_prev, na.rm = TRUE), 1)
+        # Tolerance to check if probabilities have changed from previous iteration
+        tol_diff_w <- tol_w / 2
+        tol_diff_d <- tol_d / 2
+        if (i > 1 && diff_p_w < tol_diff_w && diff_p_d < tol_diff_d) {
+          n_same <- n_same + 1
+        }
+        if (is.na(p_w_est) || is.na(p_w_obs) || 
+            is.na(p_d_est) || is.na(p_d_obs)) break
+        # Stop if probabilities are within tolerance of targets
+        else if ((abs(p_w_est - p_w_obs) < max(tol, tol_w) && 
+                  abs(p_d_est - p_d_obs) < max(tol, tol_d))) {
+          converged <- TRUE
+          break
+        # Stop if probabilities are converging within a tolerance 
+        # after n_conv iterations
+        } else if (n_same >= n_conv) {
+          converged <- TRUE
+          within_tol <- TRUE
+          break
+        }
+        
+        # Update thresholds based on current wet/dry and target probabilities
+        if (i != max_it) {
+          t_w_new <- quantile(res[[est_col]][res$est_wd_prev],
+                              probs = 1 - p_w_obs, na.rm = TRUE, names = FALSE)
+          t_w <- (1 - damping) * t_w + damping * t_w_new
+          t_d_new <- quantile(res[[est_col]][!res$est_wd_prev],
+                              probs = 1 - p_d_obs, na.rm = TRUE, names = FALSE)
+          t_d <- (1 - damping) * t_d + damping * t_d_new
+        }
       }
+      results <- results %>% 
+        tibble::add_row(station = s, season = m, t_w = t_w, t_d = t_d, 
+                        p_obs = p_obs, p_est = p_est, p_w_obs = p_w_obs, 
+                        p_w_est = p_w_est, p_d_obs = p_d_obs, 
+                        p_d_est = p_d_est, converged = converged, 
+                        within_tol = within_tol, iterations = i,
+                        n_days = nrow(data_m))
     }
-    results <- results %>% 
-      tibble::add_row(season = m, t_w = t_w, t_d = t_d, p_obs = p_obs, 
-                      p_est = p_est, p_w_obs = p_w_obs, p_w_est = p_w_est, 
-                      p_d_obs = p_d_obs, p_d_est = p_d_est, 
-                      converged = converged, within_tol = within_tol,
-                      iterations = i,
-                      n_days = nrow(data_m))
   }
+  if (is.na(stations)) results$station <- NULL
   results
 }

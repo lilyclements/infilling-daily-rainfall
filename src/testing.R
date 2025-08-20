@@ -87,7 +87,7 @@ dodoma_month <- dodoma %>%
                                    na.rm = TRUE))
 
 source(here("src", "methods.R"))
-res4 <- markov_thresholds(dodoma, "rain", "tamsat_rain", season_col = "season", 
+res6 <- markov_thresholds(dodoma, "rain", "tamsat_rain", season_col = "season", 
                          tol = 1e-2, max_it = 20)
 
 
