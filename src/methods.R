@@ -130,7 +130,7 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
   
   for (s in stations) {
     for (m in levels(data[[season_col]])) {
-      if (!is.na(stations)) data_m <- dplyr::filter(data, station == s & season == m)
+      if (!is.na(s)) data_m <- dplyr::filter(data, station == s & season == m)
       else data_m <- dplyr::filter(data, season == m)
       est_m <- data_m[[est_col]]
       obs_wd <- data_m[["obs_wd"]]
@@ -232,6 +232,6 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
                         n_days = nrow(data_m))
     }
   }
-  if (is.na(stations)) results$station <- NULL
+  if (all(is.na(stations))) results$station <- NULL
   results
 }

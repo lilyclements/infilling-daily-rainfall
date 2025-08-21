@@ -92,3 +92,52 @@ res6 <- markov_thresholds(dodoma, "rain", "tamsat_rain", season_col = "season",
 
 
 zimbabwe <- readr::read_csv(here("data", "zim_five_stations.csv"))
+
+zimbabwe_stations <- readr::read_csv(here("data", "zimbabwe_stations.csv"))
+
+zimbabwe_tamsat_list <- list()
+for (i in seq_along(zimbabwe_stations$station)) {
+  s <- zimbabwe_stations$station[i]
+  zimbabwe_tamsat_list[[i]] <- read_csv(here("data", paste0("tamsat3.1_", s, ".csv")), 
+                                   na = "-999")
+}
+names(zimbabwe_tamsat_list) <- zimbabwe_stations$station
+zimbabwe_tamsat <- bind_rows(zimbabwe_tamsat_list, .id = "station")
+zimbabwe_tamsat <- zimbabwe_tamsat %>%
+  dplyr::mutate(station = station, date = time, tamsat_rain = rfe_filled,
+                .keep = "none")
+zimbabwe <- dplyr::left_join(zimbabwe, zimbabwe_tamsat,
+                             by = c("station", "date"))
+
+zimbabwe <- zimbabwe %>%
+  filter(date >= as.Date("1983-01-01") & date <= as.Date("2023-06-30"))
+
+zimbabwe <- zimbabwe %>%
+  mutate(year = year(date), 
+         month = month(date), 
+         day = day(date),
+         rainday = rain > 0.85,
+         rainday_lag = dplyr::lag(rainday, default = NA),
+         tamsat_rainday = tamsat_rain > 0.85,
+         tamsat_rainday_lag = dplyr::lag(tamsat_rainday, default = NA),
+         season = ifelse(month %in% 5:9, "dry", as.character(month)),
+         season = factor(season, levels = c("dry", 10:12, 1:4)))
+
+zimbabwe_month <- zimbabwe %>% 
+  group_by(station, season) %>%
+  filter(!is.na(rain) & !is.na(tamsat_rain)) %>%
+  summarise(n = n(),
+            n_rain = sum(rainday),
+            n_rain_tamsat = sum(tamsat_rainday),
+            n_rain_w = sum(rainday[rainday_lag], na.rm = TRUE),
+            n_rain_w_tamsat = sum(tamsat_rainday[tamsat_rainday_lag], 
+                                  na.rm = TRUE),
+            n_rain_d = sum(rainday[!rainday_lag], na.rm = TRUE),
+            n_rain_d_tamsat = sum(tamsat_rainday[!tamsat_rainday_lag], 
+                                  na.rm = TRUE))
+
+source(here("src", "methods.R"))
+
+zim_res <- markov_thresholds(zimbabwe, obs_col = "rain", est_col = "tamsat_rain", 
+                             season_col = "season", station_col = "station",
+                             tol = 1e-2, max_it = 20)
