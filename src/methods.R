@@ -76,12 +76,20 @@ quantile_mapping <- function(obs, est, obs_thresh = 0.85,
 conditional_wd <- function(x, t_w, t_d, t0, y0) {
   n <- length(x)
   y <- logical(n)
+  # TODO Split out the case of thresholds as a column and single number
+  # Probably inefficient to do this:
+  if (length(t_w) == 1) t_w <- rep(t_w, n)
+  if (length(t_d) == 1) t_d <- rep(t_d, n)
+  if (length(t0) == 1) t0 <- rep(t0, n)
+  
   # TODO Update to also use last value from previous month as parameter, y0
   # Set first value based only on today's rain and t0
-  y[1] <- x[1] > t0
+  y[1] <- x[1] > t0[1]
   for (i in 2:n) {
-    if (is.na(y[i - 1])) y[i] <- x[i] > t0
-    else y[i] <- if(y[i - 1]) x[i] > t_w else x[i] > t_d
+    # If rain on previous day is NA
+    # then use today's rain only with overall threshold
+    if (is.na(y[i - 1])) y[i] <- x[i] > t0[i]
+    else y[i] <- if(y[i - 1]) x[i] > t_w[i] else x[i] > t_d[i]
   }
   y
 }
@@ -109,6 +117,7 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
   results <- tibble(
     station = character(),
     season = character(),
+    t0 = numeric(),
     t_w = numeric(),
     t_d = numeric(),
     p_obs = numeric(),
@@ -146,7 +155,7 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
                      names = FALSE)
       t_d <- t0
       t_w <- t0
-      print(m)
+      #print(m)
       # Set to TRUE if probabilities converged to within tolerance of targets
       converged <- FALSE
       # Set to TRUE if probabilities converged to a value but not within tolerance
@@ -155,8 +164,8 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
       n_same <- 0
       # Iterate to converge to target probabilities
       for (i in 1:max_it) {
-        print(t_w)
-        print(t_d)
+        #print(t_w)
+        #print(t_d)
         res <- data_m %>%
           group_by(year, season) %>%
           group_modify(~{
@@ -180,13 +189,13 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
         p_est <- p_est_new
         p_w_est <- p_w_est_new
         p_d_est <- p_d_est_new
-        print(abs(p_w_est - p_w_obs))
-        print(abs(p_d_est - p_d_obs))
-        print(sum(res$est_wd_prev, na.rm = TRUE))
-        print(sum(!res$est_wd_prev, na.rm = TRUE))
+        #print(abs(p_w_est - p_w_obs))
+        #print(abs(p_d_est - p_d_obs))
+        #print(sum(res$est_wd_prev, na.rm = TRUE))
+        #print(sum(!res$est_wd_prev, na.rm = TRUE))
         if (i > 1) {
-          print(diff_p_w)
-          print(diff_p_d)
+          #print(diff_p_w)
+          #print(diff_p_d)
         }
         # Compare with target probabilities and stop if sufficiently converged
         # Use a tolerance based on number of observations
@@ -224,7 +233,7 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
         }
       }
       results <- results %>% 
-        tibble::add_row(station = s, season = m, t_w = t_w, t_d = t_d, 
+        tibble::add_row(station = s, season = m, t0 = t0, t_w = t_w, t_d = t_d,
                         p_obs = p_obs, p_est = p_est, p_w_obs = p_w_obs, 
                         p_w_est = p_w_est, p_d_obs = p_d_obs, 
                         p_d_est = p_d_est, converged = converged, 
@@ -234,4 +243,21 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
   }
   if (all(is.na(stations))) results$station <- NULL
   results
+}
+
+markov_loci <- function(data, obs_col = "obs", est_col = "est",
+                        date_col = "date", season_col, station_col,
+                        obs_thr = 0.85, m_thresh) {
+  m_thresh <- m_thresh %>% 
+    dplyr::select(station, season, t0, t_w, t_d)
+  data <- data %>% rename(season = season_col)
+  data <- data %>% rename(station = station_col)
+  data_t <- dplyr::left_join(data, m_thresh, by = c("station", "season"))
+  data_t[["obs_wd"]] <- data_t[[obs_col]] > obs_thr
+  data_t[["obs_wd_prev"]] <- dplyr::lag(data_t[["obs_wd"]])
+  data_t[["est_wd"]] <- conditional_wd(data_t[[est_col]], 
+                                       data_t[["t_w"]], data_t[["t_d"]], 
+                                       data_t[["t0"]])
+  data_t[["est_wd_prev"]] <- dplyr::lag(data_t[["est_wd"]])
+  data_t
 }
