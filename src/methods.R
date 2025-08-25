@@ -96,14 +96,14 @@ conditional_wd <- function(x, t_w, t_d, t0, y0) {
 
 markov_thresholds <- function(data, obs_col = "obs", est_col = "est", 
                               date_col = "date", season_col, station_col,
-                              obs_thr = 0.85, tol = 1e-3, max_it = 20, 
+                              obs_thr = 0.85, tol = 1e-2, max_it = 20, 
                               n_conv = 5, damping = 0.4) {
   
   data[["year"]] <- lubridate::year(data[[date_col]])
   if (missing(season_col)) {
     data[["season"]] <- factor(lubridate::month(data[[date_col]]))
   } else {
-    data <- data %>% rename(season = season_col)
+    data <- data %>% rename(season = all_of(season_col))
   }
   season_col <- "season"
   data[["day"]] <- lubridate::day(data[[date_col]])
@@ -133,7 +133,7 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
   )
   if (!missing(station_col)) {
     stations <- unique(data[[station_col]])
-    data <- data %>% rename(station = station_col)
+    data <- data %>% rename(station = all_of(station_col))
     station_col <- "station"
   } else stations <- NA
   
@@ -247,17 +247,33 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
 
 markov_loci <- function(data, obs_col = "obs", est_col = "est",
                         date_col = "date", season_col, station_col,
-                        obs_thr = 0.85, m_thresh) {
-  m_thresh <- m_thresh %>% 
-    dplyr::select(station, season, t0, t_w, t_d)
-  data <- data %>% rename(season = season_col)
-  data <- data %>% rename(station = station_col)
-  data_t <- dplyr::left_join(data, m_thresh, by = c("station", "season"))
-  data_t[["obs_wd"]] <- data_t[[obs_col]] > obs_thr
-  data_t[["obs_wd_prev"]] <- dplyr::lag(data_t[["obs_wd"]])
-  data_t[["est_wd"]] <- conditional_wd(data_t[[est_col]], 
-                                       data_t[["t_w"]], data_t[["t_d"]], 
-                                       data_t[["t0"]])
-  data_t[["est_wd_prev"]] <- dplyr::lag(data_t[["est_wd"]])
-  data_t
+                        obs_thr = 0.85, tol = 1e-2, max_it = 20, n_conv = 5,
+                        damping = 0.4, blocks) {
+  
+  data <- data %>% 
+    rename(date = all_of(date_col),
+           season = all_of(season_col),
+           station = all_of(station_col))
+  
+  for (i in 1:(length(blocks) - 1)) {
+    data_cal <- data %>% 
+      filter(date >= blocks[i] & date < blocks[i + 1])
+    data_apply <- data %>%
+      filter(!(date >= blocks[i] & date < blocks[i + 1]))
+    m_thresh <- markov_thresholds(data_cal, obs_col = obs_col, est_col = est_col, 
+                                  date_col = date_col, season_col = season_col, 
+                                  station_col = station_col, obs_thr = obs_thr, 
+                                  tol = tol, max_it = max_it, n_conv = n_conv, 
+                                  damping = damping)
+    m_thresh <- m_thresh %>% 
+      dplyr::select(station, season, t0, t_w, t_d)
+    data_apply <- dplyr::left_join(data_apply, m_thresh, 
+                                   by = c("station", "season"))
+    data_apply[["obs_wd"]] <- data_apply[[obs_col]] > obs_thr
+    data_apply[["obs_wd_prev"]] <- dplyr::lag(data_apply[["obs_wd"]])
+    data_apply[["est_wd"]] <- conditional_wd(data_apply[[est_col]], 
+                                             data_apply[["t_w"]], data_apply[["t_d"]], 
+                                             data_apply[["t0"]])
+    data_apply[["est_wd_prev"]] <- dplyr::lag(data_apply[["est_wd"]])
+  }
 }

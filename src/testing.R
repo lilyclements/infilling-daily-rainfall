@@ -144,4 +144,5 @@ source(here("src", "methods.R"))
 
 x <- markov_loci(zimbabwe, obs_col = "rain", est_col = "tamsat_rain", 
              season_col = "season", station_col = "station",
-             m_thresh = m_thresh)
+             blocks = as.Date(c("1983-01-01", "1993-01-01", "2003-01-01", 
+                                "2013-01-01", "2023-07-01")))
