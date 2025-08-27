@@ -97,7 +97,8 @@ conditional_wd <- function(x, t_w, t_d, t0, y0) {
 markov_thresholds <- function(data, obs_col = "obs", est_col = "est", 
                               date_col = "date", season_col, station_col,
                               obs_thr = 0.85, tol = 1e-2, max_it = 20, 
-                              n_conv = 5, damping = 0.4) {
+                              n_conv = 5, damping = 0.4, loci = TRUE,
+                              qm_empirical = TRUE) {
   
   data[["year"]] <- lubridate::year(data[[date_col]])
   if (missing(season_col)) {
@@ -129,7 +130,9 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
     converged = logical(),
     within_tol = logical(),
     iterations = integer(),
-    n_days = integer()
+    n_days = integer(),
+    s_wet = numeric(),
+    s_dry = numeric()
   )
   if (!missing(station_col)) {
     stations <- unique(data[[station_col]])
@@ -176,9 +179,11 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
           }) %>%
           ungroup()
         # Update probabilities
-        p_est_new <- mean(res$est_wd, na.rm = TRUE)
-        p_w_est_new <- mean(res$est_wd[res$est_wd_prev], na.rm = TRUE)
-        p_d_est_new <- mean(res$est_wd[!res$est_wd_prev], na.rm = TRUE)
+        est_wd <- res$est_wd
+        est_wd_prev <- res$est_wd_prev
+        p_est_new <- mean(est_wd, na.rm = TRUE)
+        p_w_est_new <- mean(est_wd[est_wd_prev], na.rm = TRUE)
+        p_d_est_new <- mean(est_wd[!est_wd_prev], na.rm = TRUE)
         # Calculate difference between previous probabilities 
         # if not first iteration
         if (i > 1) {
@@ -189,14 +194,6 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
         p_est <- p_est_new
         p_w_est <- p_w_est_new
         p_d_est <- p_d_est_new
-        #print(abs(p_w_est - p_w_obs))
-        #print(abs(p_d_est - p_d_obs))
-        #print(sum(res$est_wd_prev, na.rm = TRUE))
-        #print(sum(!res$est_wd_prev, na.rm = TRUE))
-        if (i > 1) {
-          #print(diff_p_w)
-          #print(diff_p_d)
-        }
         # Compare with target probabilities and stop if sufficiently converged
         # Use a tolerance based on number of observations
         tol_w <- 1 / max(sum(res$est_wd_prev, na.rm = TRUE), 1)
@@ -232,16 +229,42 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
           t_d <- (1 - damping) * t_d + damping * t_d_new
         }
       }
+      s_wet <- NA
+      s_dry <- NA
+      if (loci) {
+        obs_prev_wet <- data_m[[obs_col]][obs_wd_prev]
+        obs_prev_dry <- data_m[[obs_col]][!obs_wd_prev]
+        est_prev_wet <- data_m[[est_col]][est_wd_prev]
+        est_prev_dry <- data_m[[est_col]][!est_wd_prev]
+        s_obs_wet <- mean(obs_prev_wet[obs_prev_wet > obs_thr], 
+                          na.rm = TRUE) - obs_thr
+        s_est_wet <- mean(est_prev_wet[est_prev_wet > t_w], 
+                          na.rm = TRUE) - t_w
+        s_wet <- s_obs_wet / s_est_wet
+        
+        s_obs_dry <- mean(obs_prev_dry[obs_prev_dry > obs_thr], 
+                          na.rm = TRUE) - obs_thr
+        s_est_dry <- mean(est_prev_dry[est_prev_dry > t_d], 
+                          na.rm = TRUE) - t_d
+        s_dry <- s_obs_dry / s_est_dry
+        
+      }
+      if (qm_empirical) {
+        
+      }
+      
       results <- results %>% 
         tibble::add_row(station = s, season = m, t0 = t0, t_w = t_w, t_d = t_d,
                         p_obs = p_obs, p_est = p_est, p_w_obs = p_w_obs, 
                         p_w_est = p_w_est, p_d_obs = p_d_obs, 
                         p_d_est = p_d_est, converged = converged, 
                         within_tol = within_tol, iterations = i,
-                        n_days = nrow(data_m))
+                        n_days = nrow(data_m), s_wet = s_wet, s_dry = s_dry)
     }
   }
   if (all(is.na(stations))) results$station <- NULL
+  if (all(is.na(results$s_wet))) results$s_wet <- NULL
+  if (all(is.na(results$s_dry))) results$s_dry <- NULL
   results
 }
 
@@ -249,6 +272,7 @@ markov_loci <- function(data, obs_col = "obs", est_col = "est",
                         date_col = "date", season_col, station_col,
                         obs_thr = 0.85, tol = 1e-2, max_it = 20, n_conv = 5,
                         damping = 0.4, blocks) {
+  #TODO Modify to use updated markov_thresholds function
   
   data <- data %>% 
     rename(date = all_of(date_col),
@@ -256,10 +280,14 @@ markov_loci <- function(data, obs_col = "obs", est_col = "est",
            station = all_of(station_col))
   
   for (i in 1:(length(blocks) - 1)) {
+    data_temp <- data
+    # data to calibrate parameters
     data_cal <- data %>% 
       filter(date >= blocks[i] & date < blocks[i + 1])
+    # data to apply bias correction to
     data_apply <- data %>%
       filter(!(date >= blocks[i] & date < blocks[i + 1]))
+    # Calculate thresholds on calibration data
     m_thresh <- markov_thresholds(data_cal, obs_col = obs_col, est_col = est_col, 
                                   date_col = date_col, season_col = season_col, 
                                   station_col = station_col, obs_thr = obs_thr, 
@@ -267,13 +295,23 @@ markov_loci <- function(data, obs_col = "obs", est_col = "est",
                                   damping = damping)
     m_thresh <- m_thresh %>% 
       dplyr::select(station, season, t0, t_w, t_d)
-    data_apply <- dplyr::left_join(data_apply, m_thresh, 
+    data_cal <- dplyr::left_join(data_cal, m_thresh, 
                                    by = c("station", "season"))
-    data_apply[["obs_wd"]] <- data_apply[[obs_col]] > obs_thr
-    data_apply[["obs_wd_prev"]] <- dplyr::lag(data_apply[["obs_wd"]])
-    data_apply[["est_wd"]] <- conditional_wd(data_apply[[est_col]], 
-                                             data_apply[["t_w"]], data_apply[["t_d"]], 
-                                             data_apply[["t0"]])
-    data_apply[["est_wd_prev"]] <- dplyr::lag(data_apply[["est_wd"]])
+    data_cal[["obs_wd"]] <- data_cal[[obs_col]] > obs_thr
+    data_cal[["obs_wd_prev"]] <- dplyr::lag(data_cal[["obs_wd"]])
+    data_cal[["est_wd"]] <- conditional_wd(data_cal[[est_col]], 
+                                           data_cal[["t_w"]], data_cal[["t_d"]], 
+                                           data_cal[["t0"]])
+    data_cal[["est_wd_prev"]] <- dplyr::lag(data_cal[["est_wd"]])
+
+    obs_prev_wet <- data_cal[[obs_col]][data_cal[["obs_wd_prev"]]]
+    obs_prev_dry <- data_cal[[obs_col]][!data_cal[["obs_wd_prev"]]]
+    est_prev_wet <- data_cal[[est_col]][data_cal[["est_wd_prev"]]]
+    est_prev_dry <- data_cal[[est_col]][!data_cal[["est_wd_prev"]]]
+    est_thr_wet <- 
+    s_obs_wet <- mean(obs_prev_wet[obs_prev_wet > obs_thr]) - obs_thr
+    s_est_wet <- mean(est_prev_wet[est_prev_wet > est_thresh]) - est_thresh
+    s_wet <- s_obs_wet / s_est_wet
+    s
   }
 }
