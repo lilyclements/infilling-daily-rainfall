@@ -131,6 +131,7 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
     within_tol = logical(),
     iterations = integer(),
     n_days = integer(),
+    s_all = numeric(),
     s_wet = numeric(),
     s_dry = numeric()
   )
@@ -236,18 +237,26 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
         obs_prev_dry <- data_m[[obs_col]][!obs_wd_prev]
         est_prev_wet <- data_m[[est_col]][est_wd_prev]
         est_prev_dry <- data_m[[est_col]][!est_wd_prev]
+        s_obs_all <- mean(data_m[[obs_col]][data_m[[obs_col]] > obs_thr], 
+                      na.rm = TRUE) - obs_thr
+        s_est_all <- mean(data_m[[est_col]][data_m[[est_col]] > t0], 
+                      na.rm = TRUE) - t0
+        s_all <- s_obs_all / s_est_all
+        
         s_obs_wet <- mean(obs_prev_wet[obs_prev_wet > obs_thr], 
                           na.rm = TRUE) - obs_thr
-        s_est_wet <- mean(est_prev_wet[est_prev_wet > t_w], 
-                          na.rm = TRUE) - t_w
-        s_wet <- s_obs_wet / s_est_wet
-        
         s_obs_dry <- mean(obs_prev_dry[obs_prev_dry > obs_thr], 
                           na.rm = TRUE) - obs_thr
+        # TODO Is it always correct to subtract t_w/t_d?
+        # Could previous day rain have come from t0 or initial state?
+        # What happens to rainfall days with no previous value - adjust by s_all?
+        s_est_wet <- mean(est_prev_wet[est_prev_wet > t_w], 
+                          na.rm = TRUE) - t_w
         s_est_dry <- mean(est_prev_dry[est_prev_dry > t_d], 
                           na.rm = TRUE) - t_d
-        s_dry <- s_obs_dry / s_est_dry
         
+        s_wet <- s_obs_wet / s_est_wet
+        s_dry <- s_obs_dry / s_est_dry
       }
       if (qm_empirical) {
         
@@ -259,10 +268,12 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
                         p_w_est = p_w_est, p_d_obs = p_d_obs, 
                         p_d_est = p_d_est, converged = converged, 
                         within_tol = within_tol, iterations = i,
-                        n_days = nrow(data_m), s_wet = s_wet, s_dry = s_dry)
+                        n_days = nrow(data_m), 
+                        s_all = s_all, s_wet = s_wet, s_dry = s_dry)
     }
   }
   if (all(is.na(stations))) results$station <- NULL
+  if (all(is.na(results$s_all))) results$s_all <- NULL
   if (all(is.na(results$s_wet))) results$s_wet <- NULL
   if (all(is.na(results$s_dry))) results$s_dry <- NULL
   results
@@ -278,40 +289,53 @@ markov_loci <- function(data, obs_col = "obs", est_col = "est",
     rename(date = all_of(date_col),
            season = all_of(season_col),
            station = all_of(station_col))
-  
-  for (i in 1:(length(blocks) - 1)) {
-    data_temp <- data
-    # data to calibrate parameters
-    data_cal <- data %>% 
-      filter(date >= blocks[i] & date < blocks[i + 1])
-    # data to apply bias correction to
-    data_apply <- data %>%
-      filter(!(date >= blocks[i] & date < blocks[i + 1]))
-    # Calculate thresholds on calibration data
-    m_thresh <- markov_thresholds(data_cal, obs_col = obs_col, est_col = est_col, 
-                                  date_col = date_col, season_col = season_col, 
-                                  station_col = station_col, obs_thr = obs_thr, 
-                                  tol = tol, max_it = max_it, n_conv = n_conv, 
-                                  damping = damping)
-    m_thresh <- m_thresh %>% 
-      dplyr::select(station, season, t0, t_w, t_d)
-    data_cal <- dplyr::left_join(data_cal, m_thresh, 
-                                   by = c("station", "season"))
-    data_cal[["obs_wd"]] <- data_cal[[obs_col]] > obs_thr
-    data_cal[["obs_wd_prev"]] <- dplyr::lag(data_cal[["obs_wd"]])
-    data_cal[["est_wd"]] <- conditional_wd(data_cal[[est_col]], 
-                                           data_cal[["t_w"]], data_cal[["t_d"]], 
-                                           data_cal[["t0"]])
-    data_cal[["est_wd_prev"]] <- dplyr::lag(data_cal[["est_wd"]])
-
-    obs_prev_wet <- data_cal[[obs_col]][data_cal[["obs_wd_prev"]]]
-    obs_prev_dry <- data_cal[[obs_col]][!data_cal[["obs_wd_prev"]]]
-    est_prev_wet <- data_cal[[est_col]][data_cal[["est_wd_prev"]]]
-    est_prev_dry <- data_cal[[est_col]][!data_cal[["est_wd_prev"]]]
-    est_thr_wet <- 
-    s_obs_wet <- mean(obs_prev_wet[obs_prev_wet > obs_thr]) - obs_thr
-    s_est_wet <- mean(est_prev_wet[est_prev_wet > est_thresh]) - est_thresh
-    s_wet <- s_obs_wet / s_est_wet
-    s
+  result_list <- list()
+  stations <- unique(data$station)
+  c <- 1
+  for (st in stations) {
+    data_st <- data %>% filter(station == st)
+    for (b in 1:(length(blocks) - 1)) {
+      # data to calibrate parameters
+      data_cal <- data_st %>% 
+        filter(date >= blocks[b] & date < blocks[b + 1])
+      # data to apply bias correction to
+      data_apply <- data_st %>%
+        filter(!(date >= blocks[b] & date < blocks[b + 1]))
+      
+      # Calculate thresholds on calibration data
+      m_thresh <- markov_thresholds(data_cal, obs_col = obs_col, est_col = est_col, 
+                                    date_col = date_col, season_col = season_col, 
+                                    station_col = station_col, obs_thr = obs_thr, 
+                                    tol = tol, max_it = max_it, n_conv = n_conv, 
+                                    damping = damping)
+      
+      data_apply <- dplyr::left_join(data_apply, m_thresh,
+                                     by = c("station", "season"))
+      n <- nrow(data_apply)
+      est <- data_apply[[est_col]]
+      t0 <- data_apply[["t0"]]
+      t_w <- data_apply[["t_w"]]
+      t_d <- data_apply[["t_d"]]
+      s <- data_apply[["s_all"]]
+      s_wet <- data_apply[["s_wet"]]
+      s_dry <- data_apply[["s_dry"]]
+      est_loci <- numeric(n)
+      est_loci[1] <- obs_thr + s[1] * (est[1] - t0[1])
+      # NEXT check this is correct
+      for (i in 2:n) {
+        if (is.na(est_loci[i - 1])) {
+          est_loci[i] <- obs_thr + s[i] * (est[i] - t0[i])
+        } else if (est_loci[i - 1] > obs_thr) {
+          est_loci[i] <- obs_thr + s_wet[i] * (est[i] - t_w[i])
+        } else {
+          est_loci[i] <- obs_thr + s_dry[i] * (est[i] - t_d[i])
+        }
+      }
+      est_loci <- pmax(est_loci, 0)
+      data_apply$est_loci <- est_loci
+      result_list[[c]] <- data_apply
+      c <- c + 1
+    }
   }
+  bind_rows(result_list)
 }

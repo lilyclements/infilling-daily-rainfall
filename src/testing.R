@@ -136,11 +136,11 @@ zimbabwe_month <- zimbabwe %>%
             n_rain_d_tamsat = sum(tamsat_rainday[!tamsat_rainday_lag], 
                                   na.rm = TRUE))
 
+source(here("src", "methods.R"))
+
 m_thresh <- markov_thresholds(zimbabwe, obs_col = "rain", est_col = "tamsat_rain",
                               season_col = "season", station_col = "station",
                               tol = 1e-2, max_it = 20)
-
-source(here("src", "methods.R"))
 
 x <- markov_loci(zimbabwe, obs_col = "rain", est_col = "tamsat_rain", 
              season_col = "season", station_col = "station",
