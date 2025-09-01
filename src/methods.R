@@ -54,10 +54,10 @@ quantile_mapping <- function(obs, est, obs_thresh = 0.85,
   if (qm_method == "gamma") {
     obs_gamma <- fit_gamma(obs, obs_thresh, method = gamma_method)
     est_gamma <- fit_gamma(est, est_thresh, method = gamma_method)
-    obs_shape = obs_gamma[["estimate"]][["shape"]]
-    obs_rate = obs_gamma[["estimate"]][["rate"]]
-    est_shape = est_gamma[["estimate"]][["shape"]]
-    est_rate = est_gamma[["estimate"]][["rate"]]
+    obs_shape <- obs_gamma[["estimate"]][["shape"]]
+    obs_rate <- obs_gamma[["estimate"]][["rate"]]
+    est_shape <- est_gamma[["estimate"]][["shape"]]
+    est_rate <- est_gamma[["estimate"]][["rate"]]
     est_qm <- if_else(est <= est_thresh, 0,
                       qgamma(pgamma(est - est_thresh, shape = est_shape, 
                                     rate = est_rate),
@@ -98,7 +98,9 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
                               date_col = "date", season_col, station_col,
                               obs_thr = 0.85, tol = 1e-2, max_it = 20, 
                               n_conv = 5, damping = 0.4, loci = TRUE,
-                              qm_empirical = TRUE) {
+                              qm_empirical = TRUE, qm_gamm = TRUE,
+                              gamma_method = c("mle", "mme", "qme", "mge", 
+                                               "mse")) {
   
   data[["year"]] <- lubridate::year(data[[date_col]])
   if (missing(season_col)) {
@@ -232,11 +234,11 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
       }
       s_wet <- NA
       s_dry <- NA
+      obs_prev_wet <- data_m[[obs_col]][obs_wd_prev]
+      obs_prev_dry <- data_m[[obs_col]][!obs_wd_prev]
+      est_prev_wet <- data_m[[est_col]][est_wd_prev]
+      est_prev_dry <- data_m[[est_col]][!est_wd_prev]
       if (loci) {
-        obs_prev_wet <- data_m[[obs_col]][obs_wd_prev]
-        obs_prev_dry <- data_m[[obs_col]][!obs_wd_prev]
-        est_prev_wet <- data_m[[est_col]][est_wd_prev]
-        est_prev_dry <- data_m[[est_col]][!est_wd_prev]
         s_obs_all <- mean(data_m[[obs_col]][data_m[[obs_col]] > obs_thr], 
                       na.rm = TRUE) - obs_thr
         s_est_all <- mean(data_m[[est_col]][data_m[[est_col]] > t0], 
@@ -261,6 +263,23 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
       if (qm_empirical) {
         
       }
+      if (qm_gamma) {
+        gamma_obs_all <- fit_gamma(data_m[[obs_col]], obs_thresh = obs_thr, 
+                                   method = gamma_method)
+        gamma_est_all <- fit_gamma(data_m[[est_col]], obs_thresh = t0, 
+                                   method = gamma_method)
+        
+        gamma_obs_wet <- fit_gamma(obs_prev_wet, obs_thresh = obs_thr, 
+                                   method = gamma_method)
+        gamma_obs_dry <- fit_gamma(obs_prev_dry, obs_thresh = obs_thr, 
+                                   method = gamma_method)
+        
+        gamma_est_wet <- fit_gamma(est_prev_wet, obs_thresh = t_w, 
+                                   method = gamma_method)
+        gamma_est_dry <- fit_gamma(est_prev_dry, obs_thresh = t_d, 
+                                   method = gamma_method)
+        # NEXT Extract parameters here?
+      }
       
       results <- results %>% 
         tibble::add_row(station = s, season = m, t0 = t0, t_w = t_w, t_d = t_d,
@@ -283,8 +302,6 @@ markov_loci <- function(data, obs_col = "obs", est_col = "est",
                         date_col = "date", season_col, station_col,
                         obs_thr = 0.85, tol = 1e-2, max_it = 20, n_conv = 5,
                         damping = 0.4, blocks) {
-  #TODO Modify to use updated markov_thresholds function
-  
   data <- data %>% 
     rename(date = all_of(date_col),
            season = all_of(season_col),
@@ -308,9 +325,9 @@ markov_loci <- function(data, obs_col = "obs", est_col = "est",
                                     station_col = station_col, obs_thr = obs_thr, 
                                     tol = tol, max_it = max_it, n_conv = n_conv, 
                                     damping = damping)
-      
-      data_apply <- dplyr::left_join(data_apply, m_thresh,
-                                     by = c("station", "season"))
+      data_apply <- data_apply %>%
+        dplyr::left_join(m_thresh %>% filter(station == st), 
+                         by = c("station", "season"))
       n <- nrow(data_apply)
       est <- data_apply[[est_col]]
       t0 <- data_apply[["t0"]]
@@ -321,7 +338,7 @@ markov_loci <- function(data, obs_col = "obs", est_col = "est",
       s_dry <- data_apply[["s_dry"]]
       est_loci <- numeric(n)
       est_loci[1] <- obs_thr + s[1] * (est[1] - t0[1])
-      # NEXT check this is correct
+      # TODO Should this be modified for s = 0 case?
       for (i in 2:n) {
         if (is.na(est_loci[i - 1])) {
           est_loci[i] <- obs_thr + s[i] * (est[i] - t0[i])
