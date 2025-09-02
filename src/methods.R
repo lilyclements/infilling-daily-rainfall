@@ -31,6 +31,11 @@ loci <- function(obs, est, obs_thresh = 0.85) {
   est_loci
 }
 
+safe_coef <- function(fit, name) {
+  if (is.null(fit)) return(NA)
+  coef(fit)[[name]]
+}
+
 # Quantile Mapping
 fit_gamma <- function(obs, obs_thresh = 0.85, 
                       method = c("mle", "mme", "qme", "mge", "mse")) {
@@ -43,6 +48,16 @@ fit_gamma <- function(obs, obs_thresh = 0.85,
 fit_empirical <- function(obs, obs_thresh = 0.85) {
   obs <- obs[obs > obs_thresh]
   ecdf(obs)
+}
+
+qm_gamma <- function(est, est_thresh, est_shape, est_rate, obs_shape, obs_rate,
+                     obs_thresh) {
+  if_else(est <= est_thresh, 0,
+          qgamma(pgamma(est - est_thresh, shape = est_shape,
+                        rate = est_rate),
+                 shape = obs_shape, rate = obs_rate)
+          + obs_thresh)
+  
 }
 
 quantile_mapping <- function(obs, est, obs_thresh = 0.85, 
@@ -98,7 +113,7 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
                               date_col = "date", season_col, station_col,
                               obs_thr = 0.85, tol = 1e-2, max_it = 20, 
                               n_conv = 5, damping = 0.4, loci = TRUE,
-                              qm_empirical = TRUE, qm_gamm = TRUE,
+                              qm_empirical = TRUE, qm_gamma = TRUE,
                               gamma_method = c("mle", "mme", "qme", "mge", 
                                                "mse")) {
   
@@ -135,7 +150,13 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
     n_days = integer(),
     s_all = numeric(),
     s_wet = numeric(),
-    s_dry = numeric()
+    s_dry = numeric(),
+    gamma_obs_all = list(),
+    gamma_est_all = list(),
+    gamma_obs_wet = list(),
+    gamma_obs_dry = list(),
+    gamma_est_wet = list(),
+    gamma_est_dry = list()
   )
   if (!missing(station_col)) {
     stations <- unique(data[[station_col]])
@@ -278,7 +299,6 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
                                    method = gamma_method)
         gamma_est_dry <- fit_gamma(est_prev_dry, obs_thresh = t_d, 
                                    method = gamma_method)
-        # NEXT Extract parameters here?
       }
       
       results <- results %>% 
@@ -288,7 +308,13 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
                         p_d_est = p_d_est, converged = converged, 
                         within_tol = within_tol, iterations = i,
                         n_days = nrow(data_m), 
-                        s_all = s_all, s_wet = s_wet, s_dry = s_dry)
+                        s_all = s_all, s_wet = s_wet, s_dry = s_dry,
+                        gamma_obs_all = list(gamma_obs_all),
+                        gamma_est_all = list(gamma_est_all),
+                        gamma_obs_wet = list(gamma_obs_wet),
+                        gamma_obs_dry = list(gamma_obs_dry),
+                        gamma_est_wet = list(gamma_est_wet),
+                        gamma_est_dry = list(gamma_est_dry))
     }
   }
   if (all(is.na(stations))) results$station <- NULL
@@ -328,6 +354,20 @@ markov_loci <- function(data, obs_col = "obs", est_col = "est",
       data_apply <- data_apply %>%
         dplyr::left_join(m_thresh %>% filter(station == st), 
                          by = c("station", "season"))
+      # Extract Gamma parameters for QM - Gamma
+      shape_obs_all <- map_dbl(data_apply$gamma_obs_all, ~ safe_coef(.x, "shape"))
+      rate_obs_all <- map_dbl(data_apply$gamma_obs_all, ~ safe_coef(.x, "rate"))
+      shape_est_all <- map_dbl(data_apply$gamma_est_all, ~ safe_coef(.x, "shape"))
+      rate_est_all <- map_dbl(data_apply$gamma_est_all, ~ safe_coef(.x, "rate"))
+      shape_obs_wet <- map_dbl(data_apply$gamma_obs_wet, ~ safe_coef(.x, "shape"))
+      rate_obs_wet <- map_dbl(data_apply$gamma_obs_wet, ~ safe_coef(.x, "rate"))
+      shape_obs_dry <- map_dbl(data_apply$gamma_obs_dry, ~ safe_coef(.x, "shape"))
+      rate_obs_dry <- map_dbl(data_apply$gamma_obs_dry, ~ safe_coef(.x, "rate"))
+      shape_est_wet <- map_dbl(data_apply$gamma_est_wet, ~ safe_coef(.x, "shape"))
+      rate_est_wet <- map_dbl(data_apply$gamma_est_wet, ~ safe_coef(.x, "rate"))
+      shape_est_dry <- map_dbl(data_apply$gamma_est_dry, ~ safe_coef(.x, "shape"))
+      rate_est_dry <- map_dbl(data_apply$gamma_est_dry, ~ safe_coef(.x, "rate"))
+      # Extract parameters
       n <- nrow(data_apply)
       est <- data_apply[[est_col]]
       t0 <- data_apply[["t0"]]
@@ -338,18 +378,29 @@ markov_loci <- function(data, obs_col = "obs", est_col = "est",
       s_dry <- data_apply[["s_dry"]]
       est_loci <- numeric(n)
       est_loci[1] <- obs_thr + s[1] * (est[1] - t0[1])
+      est_qm_gamma <- numeric(n)
+      est_qm_gamma[1] <- qm_gamma(est[1], t0[1], shape_est_all[1], rate_est_all[1], 
+                                  shape_obs_all[1], rate_obs_all[1], obs_thr)
       # TODO Should this be modified for s = 0 case?
+      # TODO Calculate w/d variable first and use for ifs to be consistent
       for (i in 2:n) {
         if (is.na(est_loci[i - 1])) {
           est_loci[i] <- obs_thr + s[i] * (est[i] - t0[i])
+          est_qm_gamma[i] <- qm_gamma(est[i], t0[i], shape_est_all[i], rate_est_all[i], 
+                                      shape_obs_all[i], rate_obs_all[i], obs_thr)
         } else if (est_loci[i - 1] > obs_thr) {
           est_loci[i] <- obs_thr + s_wet[i] * (est[i] - t_w[i])
+          est_qm_gamma[i] <- qm_gamma(est[i], t_w[i], shape_est_wet[i], rate_est_wet[i], 
+                                      shape_obs_wet[i], rate_obs_wet[i], obs_thr)
         } else {
           est_loci[i] <- obs_thr + s_dry[i] * (est[i] - t_d[i])
+          est_qm_gamma[i] <- qm_gamma(est[i], t_d[i], shape_est_dry[i], rate_est_dry[i], 
+                                      shape_obs_dry[i], rate_obs_dry[i], obs_thr)
         }
       }
       est_loci <- pmax(est_loci, 0)
       data_apply$est_loci <- est_loci
+      data_apply$est_qm_gamma <- est_qm_gamma
       result_list[[c]] <- data_apply
       c <- c + 1
     }

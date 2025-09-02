@@ -4,6 +4,7 @@ library(dplyr)
 library(fitdistrplus)
 library(lubridate)
 library(ggplot2)
+library(purrr)
 
 set.seed(12)
 
