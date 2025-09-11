@@ -117,7 +117,7 @@ zimbabwe <- zimbabwe %>%
   mutate(year = year(date), 
          month = month(date), 
          day = day(date),
-         #rainday = rain > 0.85,
+         rainday = rain > 0.85,
          #rainday_lag = dplyr::lag(rainday, default = NA),
          #tamsat_rainday = tamsat_rain > 0.85,
          #tamsat_rainday_lag = dplyr::lag(tamsat_rainday, default = NA),
@@ -137,7 +137,67 @@ zimbabwe_month <- zimbabwe %>%
             n_rain_d_tamsat = sum(tamsat_rainday[!tamsat_rainday_lag], 
                                   na.rm = TRUE))
 
+library(tidyverse)
+library(here)
 source(here("src", "methods.R"))
+
+zimbabwe %>% 
+  group_by(station) %>% 
+  mutate(rain_wd = rain > 0.85) %>%
+  filter(tamsat_rain == 0) %>% 
+  summarise(p0 = mean(rain_wd, na.rm = TRUE))
+
+fits <- fit_rain_prob(zimbabwe, obs_col = "rain", est_col = "tamsat_rain", 
+              station_col = "station")
+
+library(broom)
+library(pscl)
+
+fits_diag <- fits %>%
+  mutate(
+    AIC_all = map_dbl(fit_all, AIC),
+    logLik = map_dbl(fit_all, logLik),
+    pseudoR2 = map_dbl(fit_all, ~pR2(.x)["McFadden"])
+  )
+
+sat_seq <- seq(0.2, 70, by = 0.2)
+pd <- data.frame(est = sat_seq)
+
+preds <- fits %>%
+  mutate(pred = map(fit_all, ~predict(.x, newdata = pd, type = "response"))) %>%
+  unnest(pred) %>%
+  mutate(sat = rep(sat_seq, times = nrow(fits))) %>%
+  select(-fit_all)
+
+n_bins <- 15
+
+obs_bins <- zimbabwe %>%
+  group_by(station) %>%
+  mutate(
+    bin = case_when(
+      tamsat_rain == 0 ~ "S=0",
+      TRUE ~ paste0("Bin_", ntile(tamsat_rain[tamsat_rain > 0], n_bins)[match(tamsat_rain, tamsat_rain[tamsat_rain > 0])])
+    )
+  ) %>%
+  group_by(station, bin) %>%
+  summarise(
+    sat_mid = mean(tamsat_rain, na.rm = TRUE),
+    obs_prob = mean(rainday, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  )
+
+# Plot all curves together
+ggplot(preds, aes(x = sat, y = pred, color = station)) +
+  geom_point(data = obs_bins,
+             aes(x = sat_mid, y = obs_prob)) +
+  geom_line(size = 1) +
+  labs(x = "Satellite rainfall (mm)",
+       y = "P(rain day)",
+       title = "Logistic regression fits by group") +
+  facet_wrap(vars(station)) +
+  theme_minimal()
+
 
 m_thresh <- markov_thresholds(zimbabwe, obs_col = "rain", est_col = "tamsat_rain",
                               season_col = "season", station_col = "station",

@@ -418,6 +418,7 @@ markov_loci <- function(data, obs_col = "obs", est_col = "est",
       # TODO Calculate w/d variable first and use for ifs to be consistent
       for (i in 2:n) {
         if (is.na(est_loci[i - 1])) {
+          # TODO Move this to function with if for less than threshold
           est_loci[i] <- obs_thr + s[i] * (est[i] - t0[i])
           est_qm_empirical[i] <- qm_empirical(est[i], t0[i], obs_all[[i]], ecdf_est_all[[i]])
           est_qm_gamma[i] <- qm_gamma(est[i], t0[i], shape_est_all[i], rate_est_all[i], 
@@ -443,4 +444,43 @@ markov_loci <- function(data, obs_col = "obs", est_col = "est",
     }
   }
   bind_rows(result_list)
+}
+
+fit_rain_prob <- function(data, obs_col = "obs", est_col = "est", 
+                          date_col = "date", season_col, station_col,
+                          obs_thr = 0.85) {
+  data <- data %>% 
+    rename(obs = all_of(obs_col),
+           est = all_of(est_col)) %>%
+    mutate(obs_wd = obs > obs_thr)
+  
+  if (!missing(station_col)) {
+    stations <- unique(data[[station_col]])
+    data <- data %>% rename(station = all_of(station_col))
+    station_col <- "station"
+  } else stations <- NA
+  
+  results <- tibble(
+    station = character(),
+    p0 = numeric(),
+    fit_all = list(),
+    fit_month = list(),
+    fit_month_int = list()
+  )
+  
+  for (s in stations) {
+    data_s <- dplyr::filter(data, station == s)
+    p0 <- data_s %>%
+      filter(est == 0) %>%
+      summarise(p0 = mean(obs_wd, na.rm = TRUE)) %>%
+      pull(p0)
+    data_s_non_zero <- dplyr::filter(data_s, est > 0)
+    fit_all <- glm(obs_wd ~ est, data = data_s_non_zero, family = binomial)
+    fit_month <- glm(obs_wd ~ est + season, data = data_s_non_zero, family = binomial)
+    fit_month_int <- glm(obs_wd ~ est * season, data = data_s_non_zero, family = binomial)
+    results <- results %>% 
+      tibble::add_row(station = s, p0 = p0, fit_all = list(fit_all), 
+                      fit_month = list(fit_month), fit_month_int = list(fit_month_int))
+  }
+  results
 }
