@@ -109,6 +109,8 @@ zimbabwe_tamsat <- zimbabwe_tamsat %>%
                 .keep = "none")
 zimbabwe <- dplyr::left_join(zimbabwe, zimbabwe_tamsat,
                              by = c("station", "date"))
+rm(zimbabwe_tamsat)
+rm(zimbabwe_tamsat_list)
 
 zimbabwe <- zimbabwe %>%
   filter(date >= as.Date("1983-01-01") & date <= as.Date("2023-06-30"))
@@ -118,6 +120,7 @@ zimbabwe <- zimbabwe %>%
          month = month(date), 
          day = day(date),
          rainday = rain > 0.85,
+         rainday_lag = dplyr::lag(rainday),
          #rainday_lag = dplyr::lag(rainday, default = NA),
          #tamsat_rainday = tamsat_rain > 0.85,
          #tamsat_rainday_lag = dplyr::lag(tamsat_rainday, default = NA),
@@ -161,25 +164,77 @@ fits_diag <- fits %>%
   )
 
 sat_seq <- seq(0.2, 70, by = 0.2)
-pd <- data.frame(est = sat_seq)
+pd <- expand.grid(est = sat_seq, season = levels(zimbabwe$season))
 
 preds <- fits %>%
   mutate(pred = map(fit_all, ~predict(.x, newdata = pd, type = "response"))) %>%
   unnest(pred) %>%
-  mutate(sat = rep(sat_seq, times = nrow(fits))) %>%
-  select(-fit_all)
+  mutate(est = rep(pd$est, times = nrow(fits)),
+         season = rep(pd$season, times = nrow(fits))) %>%
+  dplyr::select(-starts_with("fit_"))
 
-n_bins <- 15
+pd <- expand.grid(est = sat_seq,
+                  season = levels(zimbabwe$season),
+                  obs_wd_prev = c(FALSE, TRUE))
+
+preds_markov_obs <- fits %>%
+  mutate(pred = map(fit_markov_obs, ~predict(.x, newdata = pd, type = "response"))) %>%
+  unnest(pred) %>%
+  mutate(
+    est = rep(pd$est, times = nrow(fits)),
+    season = rep(pd$season, times = nrow(fits)),
+    obs_wd_prev = rep(pd$obs_wd_prev, times = nrow(fits))
+  ) %>%
+  dplyr::select(-starts_with("fit_"))
+
+pd <- expand.grid(est = sat_seq,
+                  season = levels(zimbabwe$season),
+                  est_wd_prev = c(FALSE, TRUE))
+
+preds_markov_est <- fits %>%
+  mutate(pred = map(fit_markov_est, ~predict(.x, newdata = pd, type = "response"))) %>%
+  unnest(pred) %>%
+  mutate(
+    est = rep(pd$est, times = nrow(fits)),
+    season = rep(pd$season, times = nrow(fits)),
+    est_wd_prev = rep(pd$est_wd_prev, times = nrow(fits))
+  ) %>%
+  dplyr::select(-starts_with("fit_"))
+
+breaks <- c(0, 1, 5, 10, 20, 50, Inf)
 
 obs_bins <- zimbabwe %>%
   group_by(station) %>%
   mutate(
     bin = case_when(
       tamsat_rain == 0 ~ "S=0",
-      TRUE ~ paste0("Bin_", ntile(tamsat_rain[tamsat_rain > 0], n_bins)[match(tamsat_rain, tamsat_rain[tamsat_rain > 0])])
+      TRUE ~ as.character(cut(tamsat_rain,
+                              breaks = breaks,
+                              include.lowest = TRUE,
+                              right = FALSE))
     )
   ) %>%
-  group_by(station, bin) %>%
+  group_by(station, season, bin) %>%
+  summarise(
+    sat_mid = mean(tamsat_rain, na.rm = TRUE),
+    obs_prob = mean(rainday, na.rm = TRUE),
+    n = n(),
+    .groups = "drop"
+  )
+
+obs_bins_markov <- zimbabwe %>%
+  group_by(station) %>%
+  filter(!is.na(rainday_lag)) %>%
+  mutate(
+    bin = case_when(
+      tamsat_rain == 0 ~ "S=0",
+      TRUE ~ as.character(cut(tamsat_rain,
+                              breaks = breaks,
+                              include.lowest = TRUE,
+                              right = FALSE))
+    )
+  ) %>%
+  group_by(station, season, bin, rainday_lag) %>%
   summarise(
     sat_mid = mean(tamsat_rain, na.rm = TRUE),
     obs_prob = mean(rainday, na.rm = TRUE),
@@ -188,15 +243,29 @@ obs_bins <- zimbabwe %>%
   )
 
 # Plot all curves together
-ggplot(preds, aes(x = sat, y = pred, color = station)) +
-  geom_point(data = obs_bins,
-             aes(x = sat_mid, y = obs_prob)) +
-  geom_line(size = 1) +
+ggplot(preds, aes(x = est, y = pred)) +
+  # geom_point(data = obs_bins,
+  #            aes(x = sat_mid, y = obs_prob)) +
+  # geom_point(data = obs_bins_markov,
+  #            aes(x = sat_mid, y = obs_prob,
+  #                color = rainday_lag)) +
+  geom_line(linewidth = 1) +
+  geom_line(data = preds_markov_est,
+            aes(x = est, y = pred, color = est_wd_prev),
+            linewidth = 1) +
   labs(x = "Satellite rainfall (mm)",
        y = "P(rain day)",
        title = "Logistic regression fits by group") +
-  facet_wrap(vars(station)) +
+  facet_grid(vars(station), vars(season)) +
   theme_minimal()
+
+for (i in 1:nrow(fits)) {
+  print(fits$station[[i]])
+  #print(anova(fits$fit_month_int2[[i]], test = "Chisq"))
+  print(anova(fits$fit_month[[i]], fits$fit_month_int1[[i]], fits$fit_month_int2[[i]], test = "Chisq"))
+  print(AIC(fits$fit_month[[i]], fits$fit_month_int1[[i]], fits$fit_month_int2[[i]]))
+  print(BIC(fits$fit_month[[i]], fits$fit_month_int1[[i]], fits$fit_month_int2[[i]]))
+}
 
 
 m_thresh <- markov_thresholds(zimbabwe, obs_col = "rain", est_col = "tamsat_rain",
