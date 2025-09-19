@@ -452,8 +452,13 @@ fit_rain_prob <- function(data, obs_col = "obs", est_col = "est",
   data <- data %>% 
     rename(obs = all_of(obs_col),
            est = all_of(est_col)) %>%
-    mutate(obs_wd = obs > obs_thr)
-  
+    mutate(obs_wd = obs > obs_thr,
+           obs_wd_prev = dplyr::lag(obs_wd),
+           est_wd = est > obs_thr,
+           est_wd_prev = dplyr::lag(est_wd)) %>%
+    # needed for testing models to ensure same data used but can remove in practice
+    filter(!is.na(obs_wd_prev))
+
   if (!missing(station_col)) {
     stations <- unique(data[[station_col]])
     data <- data %>% rename(station = all_of(station_col))
@@ -463,9 +468,14 @@ fit_rain_prob <- function(data, obs_col = "obs", est_col = "est",
   results <- tibble(
     station = character(),
     p0 = numeric(),
+    p0_w = numeric(),
+    p0_d = numeric(),
     fit_all = list(),
-    fit_month = list(),
-    fit_month_int = list()
+    fit_markov_obs = list(),
+    fit_markov_est = list()#,
+    # fit_month = list(),
+    # fit_month_int1 = list(),
+    # fit_month_int2 = list()
   )
   
   for (s in stations) {
@@ -474,13 +484,26 @@ fit_rain_prob <- function(data, obs_col = "obs", est_col = "est",
       filter(est == 0) %>%
       summarise(p0 = mean(obs_wd, na.rm = TRUE)) %>%
       pull(p0)
+    p0_w <- data_s %>%
+      filter(est == 0 & obs_wd_prev) %>%
+      summarise(p0_w = mean(obs_wd, na.rm = TRUE)) %>%
+      pull(p0_w)
+    p0_d <- data_s %>%
+      filter(est == 0 & !obs_wd_prev) %>%
+      summarise(p0_d = mean(obs_wd, na.rm = TRUE)) %>%
+      pull(p0_d)
+    
     data_s_non_zero <- dplyr::filter(data_s, est > 0)
-    fit_all <- glm(obs_wd ~ est, data = data_s_non_zero, family = binomial)
-    fit_month <- glm(obs_wd ~ est + season, data = data_s_non_zero, family = binomial)
-    fit_month_int <- glm(obs_wd ~ est * season, data = data_s_non_zero, family = binomial)
+    fit_all <- glm(obs_wd ~ est + season, data = data_s_non_zero, family = binomial)
+    fit_markov_obs <- glm(obs_wd ~ est + season + obs_wd_prev, data = data_s_non_zero, family = binomial)
+    fit_markov_est <- glm(obs_wd ~ est + season + est_wd_prev, data = data_s_non_zero, family = binomial)
+    #fit_month <- glm(obs_wd ~ est + season + obs_wd_prev, data = data_s_non_zero, family = binomial)
+    #fit_month_int1 <- glm(obs_wd ~ est + season + est * obs_wd_prev, data = data_s_non_zero, family = binomial)
+    #fit_month_int2 <- glm(obs_wd ~ est * season * obs_wd_prev, data = data_s_non_zero, family = binomial)
     results <- results %>% 
-      tibble::add_row(station = s, p0 = p0, fit_all = list(fit_all), 
-                      fit_month = list(fit_month), fit_month_int = list(fit_month_int))
+      tibble::add_row(station = s, p0 = p0, p0_w = p0_w, p0_d = p0_d, 
+                      fit_all = list(fit_all), fit_markov_obs = list(fit_markov_obs),
+                      fit_markov_est = list(fit_markov_est))
   }
   results
 }
