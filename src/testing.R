@@ -276,3 +276,11 @@ x <- markov_loci(zimbabwe, obs_col = "rain", est_col = "tamsat_rain",
              season_col = "season", station_col = "station",
              blocks = as.Date(c("1983-01-01", "1993-01-01", "2003-01-01", 
                                 "2013-01-01", "2023-07-01")))
+
+
+zimbabwe %>%
+  group_by(station, season, rainday_lag) %>%
+  filter(!is.na(rainday_lag)) %>%
+  summarise(p = mean(rainday, na.rm = TRUE)) %>%
+  pivot_wider(names_from = rainday_lag, values_from = p, names_prefix = "p") %>%
+  rename(pd = pFALSE, pw = pTRUE)

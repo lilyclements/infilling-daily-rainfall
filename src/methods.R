@@ -465,6 +465,13 @@ fit_rain_prob <- function(data, obs_col = "obs", est_col = "est",
     station_col <- "station"
   } else stations <- NA
   
+  data_season <- data %>%
+    filter(!is.na(obs_wd_prev)) %>%
+    group_by(station, season, obs_wd_prev) %>%
+    summarise(p = mean(obs_wd, na.rm = TRUE)) %>%
+    pivot_wider(names_from = obs_wd_prev, values_from = p, names_prefix = "p") %>%
+    rename(pd_target = pFALSE, pw_target = pTRUE)
+  
   results <- tibble(
     station = character(),
     p0 = numeric(),
@@ -480,6 +487,8 @@ fit_rain_prob <- function(data, obs_col = "obs", est_col = "est",
   
   for (s in stations) {
     data_s <- dplyr::filter(data, station == s)
+    data_season_s <- dplyr::filter(data_season, station == s)
+    data_s <- left_join(data_s, data_season_s, by = c("station", "season"))
     p0 <- data_s %>%
       filter(est == 0) %>%
       summarise(p0 = mean(obs_wd, na.rm = TRUE)) %>%
@@ -494,16 +503,40 @@ fit_rain_prob <- function(data, obs_col = "obs", est_col = "est",
       pull(p0_d)
     
     data_s_non_zero <- dplyr::filter(data_s, est > 0)
-    fit_all <- glm(obs_wd ~ est + season, data = data_s_non_zero, family = binomial)
-    fit_markov_obs <- glm(obs_wd ~ est + season + obs_wd_prev, data = data_s_non_zero, family = binomial)
-    fit_markov_est <- glm(obs_wd ~ est + season + est_wd_prev, data = data_s_non_zero, family = binomial)
-    #fit_month <- glm(obs_wd ~ est + season + obs_wd_prev, data = data_s_non_zero, family = binomial)
-    #fit_month_int1 <- glm(obs_wd ~ est + season + est * obs_wd_prev, data = data_s_non_zero, family = binomial)
-    #fit_month_int2 <- glm(obs_wd ~ est * season * obs_wd_prev, data = data_s_non_zero, family = binomial)
+    fit_all <- glm(obs_wd ~ est + season, data = data_s_non_zero, 
+                   family = binomial, na.action = na.exclude)
+    fit_markov_obs <- glm(obs_wd ~ est + season + obs_wd_prev, 
+                          data = data_s_non_zero, family = binomial,
+                          na.action = na.exclude)
+    
+    # Markov adjustment to model fit_all
+    data_s_non_zero$p_base <- predict(fit_all, type = "response")
+    
+    data_s_non_zero_season <- data_s_non_zero %>% 
+      group_by(season) %>%
+      summarise(delta_w = solve_delta(p_base[est_wd_prev], first(pw_target)),
+                delta_d = solve_delta(p_base[!est_wd_prev], first(pd_target))
+                )
+    print(data_s_non_zero_season)
+    
     results <- results %>% 
       tibble::add_row(station = s, p0 = p0, p0_w = p0_w, p0_d = p0_d, 
-                      fit_all = list(fit_all), fit_markov_obs = list(fit_markov_obs),
-                      fit_markov_est = list(fit_markov_est))
+                      fit_all = list(fit_all), fit_markov_obs = list(fit_markov_obs))
   }
   results
+}
+
+logit    <- function(p) log(p / (1 - p))
+logistic <- function(x) 1 / (1 + exp(-x))
+
+## Solve: mean(logistic(logit(p) + delta)) = target
+solve_delta <- function(p_sub, target, tol = 1e-10, maxiter = 50, 
+                        bounds = c(-20, 20)) {
+  p_sub <- p_sub[!is.na(p_sub)]
+  if (length(p_sub) == 0) return(NA)
+  
+  fn <- function(delta) mean(plogis(qlogis(p_sub) + delta)) - target
+  delta <- uniroot(fn, interval = bounds, tol = 1e-8)$root
+  
+  return(delta)
 }
