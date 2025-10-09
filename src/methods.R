@@ -361,12 +361,13 @@ markov_loci <- function(data, obs_col = "obs", est_col = "est",
   for (st in stations) {
     data_st <- data %>% filter(station == st)
     for (b in 1:(length(blocks) - 1)) {
+      # Calibrate parameters on all data except current block, apply to current block
       # data to calibrate parameters
-      data_cal <- data_st %>% 
-        filter(date >= blocks[b] & date < blocks[b + 1])
-      # data to apply bias correction to
-      data_apply <- data_st %>%
+      data_cal <- data_st %>%
         filter(!(date >= blocks[b] & date < blocks[b + 1]))
+      # data to apply bias correction to
+      data_apply <- data_st %>% 
+        filter(date >= blocks[b] & date < blocks[b + 1])
       
       # Calculate thresholds on calibration data
       m_thresh <- markov_thresholds(data_cal, obs_col = obs_col, est_col = est_col, 
@@ -398,52 +399,78 @@ markov_loci <- function(data, obs_col = "obs", est_col = "est",
       rate_est_wet <- map_dbl(data_apply$gamma_est_wet, ~ safe_coef(.x, "rate"))
       shape_est_dry <- map_dbl(data_apply$gamma_est_dry, ~ safe_coef(.x, "shape"))
       rate_est_dry <- map_dbl(data_apply$gamma_est_dry, ~ safe_coef(.x, "rate"))
+      
       # Extract parameters
       n <- nrow(data_apply)
       est <- data_apply[[est_col]]
       t0 <- data_apply[["t0"]]
       t_w <- data_apply[["t_w"]]
       t_d <- data_apply[["t_d"]]
+      
+      # Extract LOCI parameters
       s <- data_apply[["s_all"]]
       s_wet <- data_apply[["s_wet"]]
       s_dry <- data_apply[["s_dry"]]
+      
+      # Standard BC methods
+      # TODO These could be done via mutate, loop shouldn't be needed
       est_loci <- numeric(n)
-      est_loci[1] <- obs_thr + s[1] * (est[1] - t0[1])
       est_qm_empirical <- numeric(n)
-      est_qm_empirical[1] <- qm_empirical(est[1], t0[1], obs_all[[1]], ecdf_est_all[[1]])
       est_qm_gamma <- numeric(n)
+      est_loci[1] <- obs_thr + s[1] * (est[1] - t0[1])
+      est_qm_empirical[1] <- qm_empirical(est[1], t0[1], obs_all[[1]], ecdf_est_all[[1]])
       est_qm_gamma[1] <- qm_gamma(est[1], t0[1], shape_est_all[1], rate_est_all[1], 
+                                     shape_obs_all[1], rate_obs_all[1], obs_thr)
+      
+      # Markov chain enhanced BC methods
+      est_loci_mk <- numeric(n)
+      est_loci_mk[1] <- obs_thr + s[1] * (est[1] - t0[1])
+      est_qm_empirical_mk <- numeric(n)
+      est_qm_empirical_mk[1] <- qm_empirical(est[1], t0[1], obs_all[[1]], ecdf_est_all[[1]])
+      est_qm_gamma_mk <- numeric(n)
+      est_qm_gamma_mk[1] <- qm_gamma(est[1], t0[1], shape_est_all[1], rate_est_all[1], 
                                   shape_obs_all[1], rate_obs_all[1], obs_thr)
+      
       # TODO Should this be modified for s = 0 case?
       # TODO Calculate w/d variable first and use for ifs to be consistent
       for (i in 2:n) {
-        if (is.na(est_loci[i - 1])) {
+        est_loci[i] <- obs_thr + s[i] * (est[i] - t0[i])
+        est_qm_empirical[i] <- qm_empirical(est[i], t0[i], obs_all[[i]], ecdf_est_all[[i]])
+        est_qm_gamma[i] <- qm_gamma(est[i], t0[i], shape_est_all[i], rate_est_all[i],
+                                    shape_obs_all[i], rate_obs_all[i], obs_thr)
+        if (is.na(est_loci_mk[i - 1])) {
           # TODO Move this to function with if for less than threshold
-          est_loci[i] <- obs_thr + s[i] * (est[i] - t0[i])
-          est_qm_empirical[i] <- qm_empirical(est[i], t0[i], obs_all[[i]], ecdf_est_all[[i]])
-          est_qm_gamma[i] <- qm_gamma(est[i], t0[i], shape_est_all[i], rate_est_all[i], 
+          est_loci_mk[i] <- obs_thr + s[i] * (est[i] - t0[i])
+          est_qm_empirical_mk[i] <- qm_empirical(est[i], t0[i], obs_all[[i]], ecdf_est_all[[i]])
+          est_qm_gamma_mk[i] <- qm_gamma(est[i], t0[i], shape_est_all[i], rate_est_all[i], 
                                       shape_obs_all[i], rate_obs_all[i], obs_thr)
-        } else if (est_loci[i - 1] > obs_thr) {
-          est_loci[i] <- obs_thr + s_wet[i] * (est[i] - t_w[i])
-          est_qm_empirical[i] <- qm_empirical(est[i], t_w[i], obs_wet[[i]], ecdf_est_wet[[i]])
-          est_qm_gamma[i] <- qm_gamma(est[i], t_w[i], shape_est_wet[i], rate_est_wet[i], 
+        } else if (est_loci_mk[i - 1] > obs_thr) {
+          est_loci_mk[i] <- obs_thr + s_wet[i] * (est[i] - t_w[i])
+          est_qm_empirical_mk[i] <- qm_empirical(est[i], t_w[i], obs_wet[[i]], ecdf_est_wet[[i]])
+          est_qm_gamma_mk[i] <- qm_gamma(est[i], t_w[i], shape_est_wet[i], rate_est_wet[i], 
                                       shape_obs_wet[i], rate_obs_wet[i], obs_thr)
         } else {
-          est_loci[i] <- obs_thr + s_dry[i] * (est[i] - t_d[i])
-          est_qm_empirical[i] <- qm_empirical(est[i], t_d[i], obs_dry[[i]], ecdf_est_dry[[i]])
-          est_qm_gamma[i] <- qm_gamma(est[i], t_d[i], shape_est_dry[i], rate_est_dry[i], 
+          est_loci_mk[i] <- obs_thr + s_dry[i] * (est[i] - t_d[i])
+          est_qm_empirical_mk[i] <- qm_empirical(est[i], t_d[i], obs_dry[[i]], ecdf_est_dry[[i]])
+          est_qm_gamma_mk[i] <- qm_gamma(est[i], t_d[i], shape_est_dry[i], rate_est_dry[i], 
                                       shape_obs_dry[i], rate_obs_dry[i], obs_thr)
         }
       }
       est_loci <- pmax(est_loci, 0)
       data_apply$est_loci <- est_loci
+      est_loci_mk <- pmax(est_loci_mk, 0)
+      data_apply$est_loci_mk <- est_loci_mk
       data_apply$est_qm_empirical <- est_qm_empirical
+      data_apply$est_qm_empirical_mk <- est_qm_empirical_mk
       data_apply$est_qm_gamma <- est_qm_gamma
+      data_apply$est_qm_gamma_mk <- est_qm_gamma_mk
       result_list[[c]] <- data_apply
       c <- c + 1
     }
   }
   bind_rows(result_list)
+  # result_list <- result_list %>% arrange(station, date)
+  # result_list
 }
 
 fit_rain_prob <- function(data, obs_col = "obs", est_col = "est", 
@@ -479,10 +506,8 @@ fit_rain_prob <- function(data, obs_col = "obs", est_col = "est",
     p0_d = numeric(),
     fit_all = list(),
     fit_markov_obs = list(),
-    fit_markov_est = list()#,
-    # fit_month = list(),
-    # fit_month_int1 = list(),
-    # fit_month_int2 = list()
+    fit_markov_est = list(),
+    delta_params = list()
   )
   
   for (s in stations) {
@@ -517,17 +542,16 @@ fit_rain_prob <- function(data, obs_col = "obs", est_col = "est",
       summarise(delta_w = solve_delta(p_base[est_wd_prev], first(pw_target)),
                 delta_d = solve_delta(p_base[!est_wd_prev], first(pd_target))
                 )
-    print(data_s_non_zero_season)
-    
     results <- results %>% 
       tibble::add_row(station = s, p0 = p0, p0_w = p0_w, p0_d = p0_d, 
-                      fit_all = list(fit_all), fit_markov_obs = list(fit_markov_obs))
+                      fit_all = list(fit_all), fit_markov_obs = list(fit_markov_obs),
+                      delta_params = list(data_s_non_zero_season))
   }
   results
 }
 
-logit    <- function(p) log(p / (1 - p))
-logistic <- function(x) 1 / (1 + exp(-x))
+# logit    <- function(p) log(p / (1 - p)) (logit = qlogis)
+# logistic <- function(x) 1 / (1 + exp(-x)) (logistic = plogis)
 
 ## Solve: mean(logistic(logit(p) + delta)) = target
 solve_delta <- function(p_sub, target, tol = 1e-10, maxiter = 50, 
