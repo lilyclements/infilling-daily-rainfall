@@ -5,7 +5,7 @@ library(lubridate)
 library(ggplot2)
 library(tidyr)
 library(purrr)
-
+library(verification)
 
 # Setup -------------------------------------------------------------------
 
@@ -73,6 +73,50 @@ ggplot(zim_monthly,
   geom_line() +
   facet_wrap(vars(station))
 
+
+# POD and HSS for rainday -------------------------------------------------
+
+# POD <- function(obs, sim) {
+#   H <- sum(obs & sim, na.rm = TRUE)
+#   M <- sum(obs & !sim, na.rm = TRUE)
+#   if ((H + M) == 0) return(NA)
+#   H / (H + M)
+# }
+# 
+# HSS <- function(obs, sim) {
+#   H <- sum(obs & sim, na.rm = TRUE)
+#   M <- sum(obs & !sim, na.rm = TRUE)
+#   F <- sum(!obs & sim, na.rm = TRUE)
+#   C <- sum(!obs & !sim, na.rm = TRUE)
+#   num <- 2 * (H * C - M * F)
+#   den <- (H + M) * (M + C) + (H + F) * (F + C)
+#   if (den == 0) return(NA)
+#   num / den
+# }
+
+zimbabwe_bc_stack_station <- zimbabwe_bc_stack %>%
+  ungroup() %>%
+  filter(source == "rain") %>%
+  rename(rr_station = rr,
+         rainday_station = rainday) %>%
+  dplyr::select(station, date, rainday_station, rr_station)
+
+zimbabwe_bc_comp <- zimbabwe_bc_stack %>%
+  filter(source != "rain" & source %in% rainday_sources) %>%
+  left_join(zimbabwe_bc_stack_station, by = c("station", "date"))
+
+zimbabwe_pod_hss <- zimbabwe_bc_comp %>%
+  group_by(station, source) %>%
+  summarise(ver = list(verify(rainday_station, rainday, frcst.type = "binary",
+                              obs.type = "binary")),
+            pod = map_dbl(ver, ~ .x$POD),
+            hss = map_dbl(ver, ~ .x$HSS))
+
+zimbabwe_pod_hss_format <- zimbabwe_pod_hss %>%
+  dplyr::select(-ver) %>%
+  pivot_longer(cols = c(pod, hss), names_to = "metric", values_to = "value") %>%
+  pivot_wider(names_from = source, values_from = value) %>%
+  arrange(station, factor(metric, levels = c("pod", "hss")))
 
 # Annual summaries --------------------------------------------------------
 
@@ -465,4 +509,70 @@ ggplot(fitted_doy_df_1_amounts %>% filter(source %in% rainday_sources), aes(x = 
     values = c("TRUE" = "dotted", "FALSE" = "dashed"),
     breaks = c("TRUE", "FALSE"),   # ensures TRUE appears first in legend
     labels = c("Rain", "Dry")
+  )
+
+
+# POD and HSS for rainfall categories -------------------------------------
+
+cat_labs <- c("Dry", "Light Rain", 
+              "Moderate Rain", "Heavy Rain", 
+              "Violent Rain")
+
+zimbabwe_bc_stack <- zimbabwe_bc_stack %>%
+  mutate(rain_cat = cut(rr, c(0, 0.85, 5, 20, 40, Inf), include.lowest = TRUE,
+                         right = FALSE, labels = cat_labs))
+
+zimbabwe_bc_stack_station <- zimbabwe_bc_stack %>% 
+  ungroup() %>%
+  filter(source == "rain") %>% 
+  rename(rain_cat_station = rain_cat, rr_station = rr) %>% 
+  dplyr::select(station, date, rain_cat_station, rr_station)
+
+zimbabwe_bc_stack_wide <- zimbabwe_bc_stack %>% 
+  filter(source != "rain") %>%
+  left_join(zimbabwe_bc_stack_station, by = c("station", "date"))
+
+zimbabwe_pod_hss_cats <- zimbabwe_bc_stack_wide %>%
+  group_by(station, source) %>%
+  filter(rain_cat_station != "Dry") %>%
+  summarise(
+    pod_light = sum(rain_cat == "Light Rain" & rain_cat_station == "Light Rain")/sum(rain_cat_station == "Light Rain"),
+    pod_moderate = sum(rain_cat == "Moderate Rain" & rain_cat_station == "Moderate Rain")/sum(rain_cat_station == "Moderate Rain"),
+    pod_heavy = sum(rain_cat == "Heavy Rain" & rain_cat_station == "Heavy Rain")/sum(rain_cat_station == "Heavy Rain"),
+    pod_violent = sum(rain_cat == "Violent Rain" & rain_cat_station == "Violent Rain")/sum(rain_cat_station == "Violent Rain"),
+    ver = list(verify(rain_cat_station, rain_cat, frcst.type = "cat",
+                      obs.type = "cat")),
+    hss = map_dbl(ver, ~ .x$hss))
+
+zimbabwe_pod_hss_cats_format <- zimbabwe_pod_hss_cats %>%
+  dplyr::select(-ver) %>%
+  pivot_wider(names_from = source, values_from = hss)
+
+zimbabwe_pod_hss_long <- zimbabwe_pod_hss_cats %>%
+  dplyr::select(station, source, starts_with("pod_"), hss) %>%
+  pivot_longer(
+    cols = c(starts_with("pod_"), "hss"),
+    names_to = "metric",
+    values_to = "value"
+  ) %>%
+  mutate(
+    metric = gsub("pod_", "", metric),
+    metric = factor(metric,
+                      levels = c("light", "moderate", "heavy", "violent", "hss"),
+                      labels = c("Light Rain", "Moderate Rain", "Heavy Rain", "Violent Rain", "HSS"))
+  )
+
+ggplot(zimbabwe_pod_hss_long, aes(x = metric, y = value, fill = source)) +
+  geom_col(position = position_dodge()) +
+  facet_wrap(vars(station)) +
+  labs(
+    x = "Rainfall Category / Metric",
+    y = "Score",
+    fill = "Data Source",
+    title = "POD and HSS by Rainfall Category and Station"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    strip.text = element_text(face = "bold")
   )
