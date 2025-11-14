@@ -95,6 +95,7 @@ quantile_mapping <- function(obs, est, obs_thresh = 0.85,
 }
 
 # Calculate logical wet/dry on x using t_w and t_d
+# TODO Use y0
 conditional_wd <- function(x, t_w, t_d, t0, y0) {
   n <- length(x)
   y <- logical(n)
@@ -376,6 +377,7 @@ markov_loci <- function(data, obs_col = "obs", est_col = "est",
                                     tol = tol, max_it = max_it, n_conv = n_conv, 
                                     damping = damping)
       data_apply <- data_apply %>%
+        # Filter not needed?
         dplyr::left_join(m_thresh %>% filter(station == st), 
                          by = c("station", "season"))
       # Extract Empirical parameters for QM - Empirical
@@ -473,6 +475,7 @@ markov_loci <- function(data, obs_col = "obs", est_col = "est",
   # result_list
 }
 
+# Not needed - for other methods
 fit_rain_prob <- function(data, obs_col = "obs", est_col = "est", 
                           date_col = "date", season_col, station_col,
                           obs_thr = 0.85) {

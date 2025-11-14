@@ -159,12 +159,12 @@ zim_annual_wide <- zim_annual_wide %>%
          max_dry_spell_diff = max_dry_spell_station - max_dry_spell)
 
 ggplot(zim_annual, 
-       aes(x = year, y = n_rain, colour = source)) +
+       aes(x = s_year, y = n_rain, colour = source)) +
   geom_line() +
   facet_wrap(vars(station))
 
 ggplot(zim_annual, 
-       aes(x = year, y = m_spell, colour = source)) +
+       aes(x = s_year, y = max_dry_spell, colour = source)) +
   geom_line() +
   facet_wrap(vars(station))
 
@@ -330,7 +330,7 @@ for (i in seq_len(nrow(mc_models_0))) {
   fitted_list[[i]] <- tibble(
     source = src,
     station = stn,
-    s_doy = newdata$s_doy,
+    s_doy = doy_df$s_doy,
     fitted = preds
   )
 }
@@ -437,7 +437,7 @@ for (i in seq_len(nrow(mc_models_0_amounts))) {
   fitted_list[[i]] <- tibble(
     source = src,
     station = stn,
-    s_doy = newdata$s_doy,
+    s_doy = doy_df$s_doy,
     fitted = preds
   )
 }
@@ -490,9 +490,9 @@ for (i in seq_len(nrow(mc_models_1_amounts))) {
 }
 fitted_doy_df_1_amounts <- bind_rows(fitted_list)
 
-ggplot(fitted_doy_df_1_amounts %>% filter(source %in% rainday_sources), aes(x = s_doy, y = fitted, color = source, linetype = lag_rainday)) +
+ggplot(fitted_doy_df_1_amounts, aes(x = s_doy, y = fitted, color = source, linetype = lag_rainday)) +
   geom_line(size = 1) +
-  facet_wrap(~ station) +
+  facet_grid(vars(lag_rainday), vars(station)) +
   labs(
     title = "Mean Rainfall Amount on Rainy Days",
     x = "Day of Year",
