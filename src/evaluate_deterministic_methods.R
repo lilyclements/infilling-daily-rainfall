@@ -18,15 +18,15 @@ zimbabwe_bc_stack <- zimbabwe_bc %>%
   pivot_longer(cols = c(rain, agera5_rain, est_loci:est_qm_gamma_mk), names_to = "source", values_to = "rr")
 
 # TODO start 1 Aug instead
-# 1 Sep = 245
-s_doy_start <- 245
+# 1 Aug = 214
+s_doy_start <- 214
 
 zimbabwe_bc_stack <- zimbabwe_bc_stack %>%
   group_by(station, source) %>%
   mutate(rainday = rr > 0.85,
          lag_rainday = lag(rainday),
-         month = factor(month(date), levels = c(7:12, 1:6)),
-         s_year = ifelse(month %in% 1:6, year - 1, year),
+         month = factor(month(date), levels = c(8:12, 1:7)),
+         s_year = ifelse(month %in% 1:7, year - 1, year),
          doy = yday_366(date),
          s_doy = (doy - s_doy_start + 1) %% 366,
          s_doy = ifelse(s_doy == 0, 366, s_doy)
@@ -163,6 +163,7 @@ ggplot(zim_annual,
   geom_line() +
   facet_wrap(vars(station))
 
+# QC problem in station data at Chisumbanje in 2002 and 2009
 ggplot(zim_annual, 
        aes(x = s_year, y = max_dry_spell, colour = source)) +
   geom_line() +
