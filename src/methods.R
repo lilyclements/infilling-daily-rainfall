@@ -95,7 +95,7 @@ quantile_mapping <- function(obs, est, obs_thresh = 0.85,
 }
 
 # Calculate logical wet/dry on x using t_w and t_d
-# TODO Use y0
+# y0 is a logical wet/dry value on day before start of x series, if available
 conditional_wd <- function(x, t_w, t_d, t0, y0) {
   n <- length(x)
   y <- logical(n)
@@ -105,9 +105,10 @@ conditional_wd <- function(x, t_w, t_d, t0, y0) {
   if (length(t_d) == 1) t_d <- rep(t_d, n)
   if (length(t0) == 1) t0 <- rep(t0, n)
   
-  # TODO Update to also use last value from previous month as parameter, y0
-  # Set first value based only on today's rain and t0
-  y[1] <- x[1] > t0[1]
+  # Set first value based only on y0 (if available) and x[1]
+  if (!missing(y0) && !is.na(y0)) {
+    y[1] <- if(y0) x[1] > t_w[1] else x[1] > t_d[1]
+  } else y[1] <- x[1] > t0[1]
   for (i in 2:n) {
     # If rain on previous day is NA
     # then use today's rain only with overall threshold

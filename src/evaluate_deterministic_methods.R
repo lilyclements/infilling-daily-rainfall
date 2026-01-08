@@ -32,7 +32,132 @@ zimbabwe_bc_stack <- zimbabwe_bc_stack %>%
          s_doy = ifelse(s_doy == 0, 366, s_doy)
          )
 
-rainday_sources <- c("rain", "agera5_rain", "est_loci", "est_loci_mk")
+# Only need to evaluate one existing BC method and one modified method
+# since rain days are constructed the same way
+occurrence_source <- c("rain", "agera5_rain", "est_loci", "est_loci_mk")
+# Suggesting to only use the Gamma version of QM in the paper
+# Don't think there's any added value including Empirical version as well
+amounts_source <- c(occurrence_source, "est_qm_gamma", "est_qm_gamma_mk")
+
+
+# RAINFALL OCCURRENCE -----------------------------------------------------
+
+zimbabwe_bc_stack_occ <- zimbabwe_bc_stack %>%
+  filter(source %in% occurrence_source)
+
+# Monthly climatology - mean number of rain days --------------------------
+
+zim_monthly_occ <- zimbabwe_bc_stack_occ %>%
+  group_by(station, source, month, year) %>%
+  summarise(n_rain = sum(rainday, na.rm = TRUE)) %>%
+  summarise(n_rain = mean(n_rain))
+
+ggplot(zim_monthly_occ, 
+       aes(x = month, y = n_rain, colour = source, group = source)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(vars(station))
+
+# Question: need to present any metrics or obvious from the graph?
+
+
+# Annual ------------------------------------------------------------------
+
+zim_annual_occ <- zimbabwe_bc_stack_occ %>%
+  group_by(station, source, s_year) %>%
+  summarise(n_rain = sum(rr > 0.85, na.rm = TRUE)) %>%
+  ungroup()
+
+zim_annual_dryspells <- zimbabwe_bc_stack_occ %>%
+  group_by(station, source, s_year) %>%
+  filter(month %in% c(10:12, 1:3)) %>%
+  summarise(max_dry_spell = {
+    r <- rle(!rainday)
+    max(r$lengths[r$values], na.rm = TRUE)
+  }) %>%
+  ungroup()
+
+zim_annual_occ <- left_join(zim_annual_occ, zim_annual_dryspells, 
+                            by = c("station", "source", "s_year"))
+
+zim_annual_occ_station <- zim_annual_occ %>% 
+  filter(source == "rain") %>% 
+  rename(n_rain_station = n_rain,
+         max_dry_spell_station = max_dry_spell) %>% 
+  dplyr::select(-source)
+
+zim_annual_occ_wide <- zim_annual_occ %>% 
+  filter(source != "rain") %>%
+  left_join(zim_annual_occ_station, by = c("station", "s_year"))
+
+zim_annual_occ_wide <- zim_annual_occ_wide %>% 
+  group_by(station, source) %>%
+  mutate(n_rain_diff = n_rain_station - n_rain,
+         max_dry_spell_diff = max_dry_spell_station - max_dry_spell)
+
+zim_annual_occ_metrics <- zim_annual_occ_wide %>% 
+  group_by(station, source) %>%
+  summarise(n_rain_me = mean(n_rain_diff, na.rm = TRUE),
+            max_dry_spell_me = mean(max_dry_spell_diff, na.rm = TRUE),
+            n_rain_cor = cor(n_rain, n_rain_station, use = "complete.obs"),
+            max_dry_spell_cor = cor(max_dry_spell, max_dry_spell_station))
+
+
+# Annual number of rain days
+ggplot(zim_annual_occ, 
+       aes(x = s_year, y = n_rain, colour = source)) +
+  geom_line() +
+  facet_wrap(vars(station))
+
+tbl_annual_occ_nrain <- zim_annual_occ_metrics %>%
+  dplyr::select(station, source, n_rain_me, n_rain_cor) %>%
+  pivot_longer(cols = c(n_rain_me, n_rain_cor), names_to = "metric",
+    values_to = "value") %>%
+  mutate(metric = recode(metric, n_rain_me = "ME", n_rain_cor  = "cor"),
+         value = round(value, 3)) %>%
+  pivot_wider(names_from = c(metric, source), values_from = value, 
+              names_sep = "_") %>%
+  dplyr::select(station, sort(grep("^ME_", names(.), value = TRUE)),
+    sort(grep("^cor_",  names(.), value = TRUE)))
+tbl_annual_occ_nrain
+
+# Annual length of longest dry spell (October to March)
+# QC problem in station data at Chisumbanje in 2002 and 2009
+ggplot(zim_annual_occ, 
+       aes(x = s_year, y = max_dry_spell, colour = source)) +
+  geom_line() +
+  facet_wrap(vars(station))
+
+tbl_annual_occ_maxdry <- zim_annual_occ_metrics %>%
+  dplyr::select(station, source, max_dry_spell_me, max_dry_spell_cor) %>%
+  pivot_longer(cols = c(max_dry_spell_me, max_dry_spell_cor), names_to = "metric",
+               values_to = "value") %>%
+  mutate(metric = recode(metric, max_dry_spell_me = "ME", max_dry_spell_cor  = "cor"),
+         value = round(value, 3)) %>%
+  pivot_wider(names_from = c(metric, source), values_from = value, 
+              names_sep = "_") %>%
+  dplyr::select(station, sort(grep("^ME_", names(.), value = TRUE)),
+                sort(grep("^cor_",  names(.), value = TRUE)))
+tbl_annual_occ_nrain
+
+
+# Distribution of wet/dry spells ------------------------------------------
+
+#NEXT
+
+
+
+
+
+
+
+
+
+
+
+# RAINFALL AMOUNTS --------------------------------------------------------
+
+
 
 # Monthly climatology -----------------------------------------------------
 
@@ -102,7 +227,7 @@ zimbabwe_bc_stack_station <- zimbabwe_bc_stack %>%
   dplyr::select(station, date, rainday_station, rr_station)
 
 zimbabwe_bc_comp <- zimbabwe_bc_stack %>%
-  filter(source != "rain" & source %in% rainday_sources) %>%
+  filter(source != "rain" & source %in% occurrence_source) %>%
   left_join(zimbabwe_bc_stack_station, by = c("station", "date"))
 
 zimbabwe_pod_hss <- zimbabwe_bc_comp %>%
@@ -310,7 +435,7 @@ fit_zero_order_markov <- function(data) {
 }
 
 mc_models_0 <- zimbabwe_bc_stack %>%
-  filter(source %in% rainday_sources) %>%
+  filter(source %in% occurrence_source) %>%
   group_by(source, station) %>%
   group_modify(~ tibble(m = list(fit_zero_order_markov(.x)))) %>%
   ungroup()
@@ -366,7 +491,7 @@ fit_first_order_markov <- function(data) {
 }
 
 mc_models_1 <- zimbabwe_bc_stack %>%
-  filter(source %in% rainday_sources) %>%
+  filter(source %in% occurrence_source) %>%
   group_by(source, station) %>%
   group_modify(~ tibble(m = list(fit_first_order_markov(.x)))) %>%
   ungroup()
@@ -444,7 +569,7 @@ for (i in seq_len(nrow(mc_models_0_amounts))) {
 }
 fitted_doy_df_0_amounts <- bind_rows(fitted_list)
 
-ggplot(fitted_doy_df_0_amounts %>% filter(source %in% rainday_sources), aes(x = s_doy, y = fitted, color = source)) +
+ggplot(fitted_doy_df_0_amounts %>% filter(source %in% occurrence_source), aes(x = s_doy, y = fitted, color = source)) +
   geom_line(size = 1) +
   facet_wrap(~ station, ncol = 2) +
   labs(
