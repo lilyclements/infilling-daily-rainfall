@@ -143,13 +143,226 @@ tbl_annual_occ_nrain
 
 # Distribution of wet/dry spells ------------------------------------------
 
-#NEXT
+dry_spells <- zimbabwe_bc_stack_occ %>%
+  group_by(station, source, s_year) %>%
+  filter(month %in% c(10:12, 1:3)) %>%
+  reframe(dry_spell_length = {
+    r <- rle(!rainday)
+    r$lengths[r$values]
+  })
+
+wet_spells <- zimbabwe_bc_stack_occ %>%
+  group_by(station, source, s_year) %>%
+  filter(month %in% c(10:12, 1:3)) %>%
+  reframe(wet_spell_length = {
+    r <- rle(rainday)
+    r$lengths[r$values]
+  })
+
+ggplot(dry_spells, aes(x = dry_spell_length, colour = source)) +
+  stat_ecdf(linewidth = 1) +
+  scale_x_log10() +
+  facet_wrap(vars(station)) +
+  labs(
+    x = "Dry spell length (days)",
+    y = "Empirical CDF",
+    title = "Dry spell length (October to March) distribution by source and station"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "top",
+    panel.grid.minor = element_blank()
+  )
+
+ggplot(wet_spells, aes(x = wet_spell_length, colour = source)) +
+  stat_ecdf(linewidth = 1) +
+  scale_x_log10() +
+  facet_wrap(vars(station)) +
+  labs(
+    x = "Wet spell length (days)",
+    y = "Empirical CDF",
+    title = "Wet spell length (October to March) distribution by source and station"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "top",
+    panel.grid.minor = element_blank()
+  )
+
+ks_results_dry <- dry_spells %>%
+  group_by(station) %>%
+  reframe(
+    map_dfr(c("agera5_rain", "est_loci", "est_loci_mk"), function(src) {
+      test <- ks.test(
+        dry_spell_length[source == "rain"],
+        dry_spell_length[source == src]
+      )
+      tibble(
+        source = src,
+        statistic = unname(test$statistic),
+        p_value = test$p.value
+      )
+    })
+  ) %>%
+  ungroup()
+ks_results_dry
+
+ks_results_wet <- wet_spells %>%
+  group_by(station) %>%
+  reframe(
+    map_dfr(c("agera5_rain", "est_loci", "est_loci_mk"), function(src) {
+      test <- ks.test(
+        wet_spell_length[source == "rain"],
+        wet_spell_length[source == src]
+      )
+      tibble(
+        source = src,
+        statistic = unname(test$statistic),
+        p_value = test$p.value
+      )
+    })
+  ) %>%
+  ungroup()
+ks_results_wet
 
 
+# Seasonal ----------------------------------------------------------------
 
+# TODO include diagnostics of models in supplementary material?
+#      e.g. different harmonics to justify model choice
 
+# Markov Chain Zero Order Rainday Models
 
+fit_zero_order_markov <- function(data) {
+  # Fit logistic regression: P(rainday) ~ seasonal harmonics
+  glm(rainday ~ 
+        sin(2 * pi * s_doy / 366) + cos(2 * pi * s_doy / 366) +
+        sin(4 * pi * s_doy / 366) + cos(4 * pi * s_doy / 366) +
+        sin(6 * pi * s_doy / 366) + cos(6 * pi * s_doy / 366),
+      data = data,
+      family = binomial)
+}
 
+mc_models_0 <- zimbabwe_bc_stack_occ %>%
+  group_by(source, station) %>%
+  group_modify(~ tibble(m = list(fit_zero_order_markov(.x)))) %>%
+  ungroup()
+
+doy_df <- tibble(s_doy = 1:366)
+fitted_list <- list()
+for (i in seq_len(nrow(mc_models_0))) {
+  
+  # Extract info for this model
+  src <- mc_models_0$source[i]
+  stn <- mc_models_0$station[i]
+  mod <- mc_models_0$m[[i]]
+  
+  # Predict probabilities
+  preds <- predict(mod, newdata = doy_df, type = "response")
+  
+  # Combine into a tibble
+  fitted_list[[i]] <- tibble(
+    source = src,
+    station = stn,
+    s_doy = doy_df$s_doy,
+    fitted = preds
+  )
+}
+fitted_doy_df_0 <- bind_rows(fitted_list)
+
+ggplot(fitted_doy_df_0, aes(x = s_doy, y = fitted, color = source)) +
+  geom_line(size = 1) +
+  facet_wrap(~ station, ncol = 2) +
+  labs(
+    title = "Predicted Seasonal Probability of Rainday",
+    x = "Day of Year",
+    y = "Predicted Probability",
+    color = "Source"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "right",
+    panel.grid.minor = element_blank()
+  )
+
+rain_ref <- fitted_doy_df_0 %>%
+  filter(source == "rain") %>%
+  dplyr::select(station, s_doy, fitted_rain = fitted)
+
+rmse_rainday_0 <- fitted_doy_df_0 %>%
+  filter(source != "rain") %>%
+  left_join(rain_ref, by = c("station", "s_doy")) %>%
+  group_by(station, source) %>%
+  summarise(RMSE = sqrt(mean((fitted - fitted_rain)^2, na.rm = TRUE))) %>%
+  pivot_wider(names_from  = source, values_from = RMSE)
+rmse_rainday_0
+
+# Markov Chain First Order Rainday Models
+
+fit_first_order_markov <- function(data) {
+  # Fit logistic regression: P(rainday) ~ rainday lag + seasonal harmonics
+  glm(rainday ~ 
+        lag_rainday +
+        sin(2 * pi * s_doy / 366) + cos(2 * pi * s_doy / 366) +
+        sin(4 * pi * s_doy / 366) + cos(4 * pi * s_doy / 366) +
+        sin(6 * pi * s_doy / 366) + cos(6 * pi * s_doy / 366),
+      data = data,
+      family = binomial)
+}
+
+mc_models_1 <- zimbabwe_bc_stack_occ %>%
+  group_by(source, station) %>%
+  group_modify(~ tibble(m = list(fit_first_order_markov(.x)))) %>%
+  ungroup()
+
+doy_df <- expand.grid(lag_rainday = c(TRUE, FALSE), s_doy = 1:366)
+fitted_list <- list()
+for (i in seq_len(nrow(mc_models_1))) {
+  fitted_data <- doy_df
+  preds <- predict(mc_models_1$m[[i]], newdata = fitted_data, type = "response")
+  fitted_data$fitted <- preds
+  fitted_data$source <- mc_models_1$source[i]
+  fitted_data$station <- mc_models_1$station[i]
+  
+  fitted_list[[i]] <- fitted_data
+}
+fitted_doy_df_1 <- bind_rows(fitted_list)
+
+ggplot(fitted_doy_df_1, aes(x = s_doy, y = fitted, color = source, 
+                            linetype = lag_rainday)) +
+  geom_line(size = 1) +
+  labs(
+    title = "Probability of Rainday Given Previous Day State",
+    x = "Day of Year",
+    y = "Predicted Probability",
+    color = "Source",
+    linetype = "Previous Day"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "right",
+    panel.grid.minor = element_blank()
+  ) +
+  scale_linetype_manual(
+    values = c("TRUE" = "dotted", "FALSE" = "dashed"),
+    breaks = c("TRUE", "FALSE"),   # ensures TRUE appears first in legend
+    labels = c("Rain", "Dry")
+  ) +
+  facet_grid(rows = vars(lag_rainday), cols = vars(station))
+
+rain_ref <- fitted_doy_df_1 %>%
+  filter(source == "rain") %>%
+  dplyr::select(station, s_doy, lag_rainday, fitted_rain = fitted)
+
+rmse_rainday_1 <- fitted_doy_df_1 %>%
+  filter(source != "rain") %>%
+  left_join(rain_ref, by = c("station", "s_doy", "lag_rainday")) %>%
+  group_by(station, source, lag_rainday) %>%
+  summarise(RMSE = sqrt(mean((fitted - fitted_rain)^2, na.rm = TRUE))) %>%
+  pivot_wider(names_from  = source, values_from = RMSE)
+rmse_rainday_1
+
+# Rainfall occurrence detection
 
 
 
