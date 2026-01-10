@@ -358,19 +358,70 @@ rmse_rainday_1 <- fitted_doy_df_1 %>%
   filter(source != "rain") %>%
   left_join(rain_ref, by = c("station", "s_doy", "lag_rainday")) %>%
   group_by(station, source, lag_rainday) %>%
-  summarise(RMSE = sqrt(mean((fitted - fitted_rain)^2, na.rm = TRUE))) %>%
-  pivot_wider(names_from  = source, values_from = RMSE)
+  summarise(RMSE = sqrt(mean((fitted - fitted_rain)^2, na.rm = TRUE)))
+
+# Include table in supplementary material
 rmse_rainday_1
+
+ggplot(rmse_rainday_1,
+       aes(x = lag_rainday, y = RMSE, fill = source)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  facet_wrap(~ station, ncol = 3, scales = "free_y") +
+  labs(
+    x = "Lagged rainday",
+    y = "RMSE",
+    fill = "Source",
+    title = "RMSE by source, lagged rainday, and station"
+  ) +
+  theme_minimal() +
+  theme(
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(face = "bold")
+  )
+
 
 # Rainfall occurrence detection
 
+zimbabwe_bc_stack_station_occ <- zimbabwe_bc_stack_occ %>%
+  ungroup() %>%
+  filter(source == "rain") %>%
+  rename(rr_station = rr,
+         rainday_station = rainday) %>%
+  dplyr::select(station, date, rainday_station, rr_station)
 
+zimbabwe_bc_comp_occ <- zimbabwe_bc_stack_occ %>%
+  filter(source != "rain" & source %in% occurrence_source) %>%
+  left_join(zimbabwe_bc_stack_station_occ, by = c("station", "date"))
 
+zimbabwe_pod_hss_occ <- zimbabwe_bc_comp_occ %>%
+  group_by(station, source) %>%
+  summarise(ver = list(verify(rainday_station, rainday, frcst.type = "binary",
+                              obs.type = "binary")),
+            POD = map_dbl(ver, ~ .x$POD),
+            FAR = map_dbl(ver, ~ .x$FAR),
+            HSS = map_dbl(ver, ~ .x$HSS)) %>%
+  dplyr::select(-ver) %>%
+  pivot_longer(cols = c(POD, FAR, HSS), names_to = "metric", values_to = "value",
+               names_ptypes = factor(levels = c("POD", "FAR", "HSS")))
 
+ggplot(zimbabwe_pod_hss_occ,
+       aes(x = metric, y = value, fill = source)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  facet_wrap(~ station, ncol = 3) +
+  scale_y_continuous(limits = c(0, 1)) +
+  labs(
+    x = "Metric",
+    y = "Metric value",
+    fill = "Source",
+  ) +
+  theme_minimal() +
+  theme(
+    strip.text = element_text(face = "bold")
+  )
 
 # RAINFALL AMOUNTS --------------------------------------------------------
 
-
+# NEXT
 
 # Monthly climatology -----------------------------------------------------
 
