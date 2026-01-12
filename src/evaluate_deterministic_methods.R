@@ -498,23 +498,23 @@ zim_annual_amt_metrics <- zim_annual_amt_wide %>%
 
 col_scale <- scale_colour_manual(
   values = c(
-    rain = "black",
-    agera5_rain = "#E64B35",
-    est_loci = "#0072B2",
-    est_loci_mk = "#0072B2",
-    est_qm_gamma = "#E69F00",
-    est_qm_gamma_mk = "#E69F00"
+    Gauge = "black",
+    AgERA5 = "#E64B35",
+    LOCI = "#0072B2",
+    `MC LOCI` = "#0072B2",
+    QM = "#E69F00",
+    `MC QM` = "#E69F00"
   )
 )
 
 linetype_scale <- scale_linetype_manual(
   values = c(
-    rain = "solid",
-    agera5_rain = "solid",
-    est_loci = "solid",
-    est_loci_mk = "dashed",
-    est_qm_gamma = "solid",
-    est_qm_gamma_mk = "dashed"
+    Gauge = "solid",
+    AgERA5 = "solid",
+    LOCI = "solid",
+    `MC LOCI` = "dashed",
+    QM = "solid",
+    `MC QM` = "dashed"
   )
 )
 
