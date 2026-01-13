@@ -26,6 +26,7 @@ zimbabwe_bc_stack <- zimbabwe_bc_stack %>%
   mutate(rainday = rr > 0.85,
          lag_rainday = lag(rainday),
          month = factor(month(date), levels = c(8:12, 1:7)),
+         month_abb = factor(month(date, label = TRUE, abbr = TRUE), levels = c(month.abb[8:12], month.abb[1:7])),
          s_year = ifelse(month %in% 1:7, year - 1, year),
          doy = yday_366(date),
          s_doy = (doy - s_doy_start + 1) %% 366,
@@ -38,6 +39,10 @@ zimbabwe_bc_stack$source <- factor(zimbabwe_bc_stack$source,
   labels = c("Gauge", "AgERA5", "LOCI", "MC LOCI", "QM", "MC QM",
              "QM-Empirical", "MC QM-Empirical"))
 
+zimbabwe_bc_stack$station <- recode(zimbabwe_bc_stack$station, 
+                                    Buffalo_Range = "Buffalo Range",
+                                    Mt_Darwin = "Mt Darwin")
+
 # Only need to evaluate one existing BC method and one modified method
 # since rain days are constructed the same way
 occurrence_source <- c("Gauge", "AgERA5", "LOCI", "MC LOCI")
@@ -45,27 +50,53 @@ occurrence_source <- c("Gauge", "AgERA5", "LOCI", "MC LOCI")
 # Don't think there's any added value including Empirical version as well
 amounts_source <- c(occurrence_source, "QM", "MC QM")
 
+col_scale <- scale_colour_manual(
+  values = c(
+    Gauge = "black",
+    AgERA5 = "#E64B35",
+    LOCI = "#0072B2",
+    `MC LOCI` = "#0072B2",
+    QM = "#E69F00",
+    `MC QM` = "#E69F00"
+  )
+)
 
 # RAINFALL OCCURRENCE -----------------------------------------------------
 
 zimbabwe_bc_stack_occ <- zimbabwe_bc_stack %>%
   filter(source %in% occurrence_source)
 
+col_scale_occ <- scale_colour_manual(
+  values = c(
+    Gauge = "black",
+    AgERA5 = "#E31A1C",
+    LOCI = "dodgerblue2",
+    `MC LOCI` = "green4"
+  )
+)
+
 # Monthly climatology -----------------------------------------------------
 
 zim_monthly_occ <- zimbabwe_bc_stack_occ %>%
-  group_by(station, source, month, year) %>%
+  group_by(station, source, month_abb, year) %>%
   summarise(n_rain = sum(rainday, na.rm = TRUE)) %>%
   summarise(n_rain = mean(n_rain))
 
-ggplot(zim_monthly_occ, 
-       aes(x = month, y = n_rain, colour = source, group = source)) +
+ggplot(zim_monthly_occ,
+       aes(x = month_abb, y = n_rain, colour = source, group = source)) +
   geom_point() +
   geom_line() +
-  facet_wrap(vars(station))
-
+  facet_wrap(vars(station)) +
+  labs(colour = "Source",
+       x = "Month",
+       y = "Mean number of rain days") +
+  col_scale_occ +
+  theme_minimal() +
+  theme(strip.text = element_text(face = "bold", size = 12),
+        axis.title = element_text(size = 12),
+        panel.grid.minor = element_blank())
+  
 # Question: need to present any metrics or obvious from the graph?
-
 
 # Annual summaries --------------------------------------------------------
 
