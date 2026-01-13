@@ -33,9 +33,9 @@ zimbabwe_bc_stack <- zimbabwe_bc_stack %>%
          )
 
 zimbabwe_bc_stack$source <- factor(zimbabwe_bc_stack$source,
-  levels = c("rain", "agera5_rain", "est_loci", "est_qm_gamma", "est_loci_mk", 
+  levels = c("rain", "agera5_rain", "est_loci", "est_loci_mk", "est_qm_gamma",  
              "est_qm_gamma_mk", "est_qm_empirical", "est_qm_empirical_mk"),
-  labels = c("Gauge", "AgERA5", "LOCI", "QM", "MC LOCI", "MC QM",
+  labels = c("Gauge", "AgERA5", "LOCI", "MC LOCI", "QM", "MC QM",
              "QM-Empirical", "MC QM-Empirical"))
 
 # Only need to evaluate one existing BC method and one modified method
@@ -87,13 +87,13 @@ zim_annual_occ <- left_join(zim_annual_occ, zim_annual_dryspells,
                             by = c("station", "source", "s_year"))
 
 zim_annual_occ_station <- zim_annual_occ %>% 
-  filter(source == "rain") %>% 
+  filter(source == "Gauge") %>% 
   rename(n_rain_station = n_rain,
          max_dry_spell_station = max_dry_spell) %>% 
   dplyr::select(-source)
 
 zim_annual_occ_wide <- zim_annual_occ %>% 
-  filter(source != "rain") %>%
+  filter(source != "Gauge") %>%
   left_join(zim_annual_occ_station, by = c("station", "s_year"))
 
 zim_annual_occ_wide <- zim_annual_occ_wide %>% 
@@ -199,7 +199,7 @@ ks_results_dry <- dry_spells %>%
   reframe(
     map_dfr(c("agera5_rain", "est_loci", "est_loci_mk"), function(src) {
       test <- ks.test(
-        dry_spell_length[source == "rain"],
+        dry_spell_length[source == "Gauge"],
         dry_spell_length[source == src]
       )
       tibble(
@@ -217,7 +217,7 @@ ks_results_wet <- wet_spells %>%
   reframe(
     map_dfr(c("agera5_rain", "est_loci", "est_loci_mk"), function(src) {
       test <- ks.test(
-        wet_spell_length[source == "rain"],
+        wet_spell_length[source == "Gauge"],
         wet_spell_length[source == src]
       )
       tibble(
@@ -291,11 +291,11 @@ ggplot(fitted_doy_df_0, aes(x = s_doy, y = fitted, color = source)) +
   )
 
 rain_ref <- fitted_doy_df_0 %>%
-  filter(source == "rain") %>%
+  filter(source == "Gauge") %>%
   dplyr::select(station, s_doy, fitted_rain = fitted)
 
 rmse_rainday_0 <- fitted_doy_df_0 %>%
-  filter(source != "rain") %>%
+  filter(source != "Gauge") %>%
   left_join(rain_ref, by = c("station", "s_doy")) %>%
   group_by(station, source) %>%
   summarise(RMSE = sqrt(mean((fitted - fitted_rain)^2, na.rm = TRUE))) %>%
@@ -356,11 +356,11 @@ ggplot(fitted_doy_df_1, aes(x = s_doy, y = fitted, color = source,
   facet_grid(rows = vars(lag_rainday), cols = vars(station))
 
 rain_ref <- fitted_doy_df_1 %>%
-  filter(source == "rain") %>%
+  filter(source == "Gauge") %>%
   dplyr::select(station, s_doy, lag_rainday, fitted_rain = fitted)
 
 rmse_rainday_1 <- fitted_doy_df_1 %>%
-  filter(source != "rain") %>%
+  filter(source != "Gauge") %>%
   left_join(rain_ref, by = c("station", "s_doy", "lag_rainday")) %>%
   group_by(station, source, lag_rainday) %>%
   summarise(RMSE = sqrt(mean((fitted - fitted_rain)^2, na.rm = TRUE)))
@@ -385,17 +385,17 @@ ggplot(rmse_rainday_1,
   )
 
 
-# Rainfall occurrence detection
+# Rainfall occurrence detection -------------------------------------------
 
 zimbabwe_bc_stack_station_occ <- zimbabwe_bc_stack_occ %>%
   ungroup() %>%
-  filter(source == "rain") %>%
+  filter(source == "Gauge") %>%
   rename(rr_station = rr,
          rainday_station = rainday) %>%
   dplyr::select(station, date, rainday_station, rr_station)
 
 zimbabwe_bc_comp_occ <- zimbabwe_bc_stack_occ %>%
-  filter(source != "rain" & source %in% occurrence_source) %>%
+  filter(source != "Gauge" & source %in% occurrence_source) %>%
   left_join(zimbabwe_bc_stack_station_occ, by = c("station", "date"))
 
 zimbabwe_pod_hss_occ <- zimbabwe_bc_comp_occ %>%
@@ -472,13 +472,13 @@ zim_annual_amt <- zimbabwe_bc_stack_amt %>%
   ungroup()
 
 zim_annual_amt_station <- zim_annual_amt %>% 
-  filter(source == "rain") %>% 
+  filter(source == "Gauge") %>% 
   rename(t_rain_station = t_rain, max_rain_station = max_rain,
          mean_rain_station = mean_rain) %>% 
   dplyr::select(-source)
 
 zim_annual_amt_wide <- zim_annual_amt %>% 
-  filter(source != "rain") %>%
+  filter(source != "Gauge") %>%
   left_join(zim_annual_station_amt, by = c("station", "s_year"))
 
 zim_annual_amt_wide <- zim_annual_amt_wide %>% 
@@ -630,6 +630,17 @@ ggplot(fitted_doy_df_0_amounts,
   col_scale + 
   linetype_scale
 
+rain_ref <- fitted_doy_df_0_amounts %>%
+  filter(source == "Gauge") %>%
+  dplyr::select(station, s_doy, fitted_rain = fitted)
+
+rmse_rain_amounts_0 <- fitted_doy_df_0_amounts %>%
+  filter(source != "Gauge") %>%
+  left_join(rain_ref, by = c("station", "s_doy")) %>%
+  group_by(station, source) %>%
+  summarise(RMSE = sqrt(mean((fitted - fitted_rain)^2, na.rm = TRUE))) %>%
+  pivot_wider(names_from  = source, values_from = RMSE)
+rmse_rain_amounts_0
 
 # Markov Chain First Order Rainfall Models
 
@@ -681,44 +692,78 @@ ggplot(fitted_doy_df_1_amounts,
   col_scale + 
   linetype_scale
 
+rain_ref <- fitted_doy_df_1_amounts %>%
+  filter(source == "Gauge") %>%
+  dplyr::select(station, s_doy, lag_rainday, fitted_rain = fitted)
+
+rmse_rain_amounts_1 <- fitted_doy_df_1_amounts %>%
+  filter(source != "Gauge") %>%
+  left_join(rain_ref, by = c("station", "s_doy", "lag_rainday")) %>%
+  group_by(station, source, lag_rainday) %>%
+  summarise(RMSE = sqrt(mean((fitted - fitted_rain)^2, na.rm = TRUE)))
+
+# Include table in supplementary material
+rmse_rain_amounts_1
+
+ggplot(rmse_rain_amounts_1,
+       aes(x = lag_rainday, y = RMSE, fill = source)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  facet_wrap(~ station, ncol = 3, scales = "free_y") +
+  labs(
+    x = "Lagged rainday",
+    y = "RMSE",
+    fill = "Source",
+    title = "RMSE by source, lagged rainday, and station"
+  ) +
+  theme_minimal() +
+  theme(
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(face = "bold")
+  )
 
 # POD and HSS for rainfall categories -------------------------------------
 
-cat_labs <- c("Dry", "Light Rain", 
+cat_labs <- c("No Rain", "Light Rain", 
               "Moderate Rain", "Heavy Rain", 
               "Violent Rain")
 
-zimbabwe_bc_stack <- zimbabwe_bc_stack %>%
+zimbabwe_bc_stack_amt <- zimbabwe_bc_stack_amt %>%
   mutate(rain_cat = cut(rr, c(0, 0.85, 5, 20, 40, Inf), include.lowest = TRUE,
                          right = FALSE, labels = cat_labs))
 
-zimbabwe_bc_stack_station <- zimbabwe_bc_stack %>% 
+zimbabwe_bc_stack_amt_station <- zimbabwe_bc_stack_amt %>% 
   ungroup() %>%
-  filter(source == "rain") %>% 
+  filter(source == "Gauge") %>% 
   rename(rain_cat_station = rain_cat, rr_station = rr) %>% 
   dplyr::select(station, date, rain_cat_station, rr_station)
 
-zimbabwe_bc_stack_wide <- zimbabwe_bc_stack %>% 
-  filter(source != "rain") %>%
-  left_join(zimbabwe_bc_stack_station, by = c("station", "date"))
+zimbabwe_bc_stack_amt_wide <- zimbabwe_bc_stack_amt %>% 
+  filter(source != "Gauge") %>%
+  left_join(zimbabwe_bc_stack_amt_station, by = c("station", "date"))
 
-zimbabwe_pod_hss_cats <- zimbabwe_bc_stack_wide %>%
+zimbabwe_pod_hss_amt <- zimbabwe_bc_stack_amt_wide %>%
   group_by(station, source) %>%
-  filter(rain_cat_station != "Dry") %>%
+  filter(!is.na(rain_cat) & !is.na(rain_cat_station)) %>%
+  filter(month %in% c(10:12, 1:3)) %>%
+  # Question: Should HSS be calculated with or without "Dry" category
+  # Probably makes more sense with it included, but misleading since not in graph?
+  # Or add to graph which is a repetition of POD shown in occurrence section?
+  # filter(rain_cat_station != "Dry") %>%
   summarise(
-    pod_light = sum(rain_cat == "Light Rain" & rain_cat_station == "Light Rain")/sum(rain_cat_station == "Light Rain"),
-    pod_moderate = sum(rain_cat == "Moderate Rain" & rain_cat_station == "Moderate Rain")/sum(rain_cat_station == "Moderate Rain"),
-    pod_heavy = sum(rain_cat == "Heavy Rain" & rain_cat_station == "Heavy Rain")/sum(rain_cat_station == "Heavy Rain"),
-    pod_violent = sum(rain_cat == "Violent Rain" & rain_cat_station == "Violent Rain")/sum(rain_cat_station == "Violent Rain"),
+    pod_no = sum(rain_cat == "No Rain" & rain_cat_station == "No Rain", na.rm = TRUE) / sum(rain_cat_station == "No Rain", na.rm = TRUE),
+    pod_light = sum(rain_cat == "Light Rain" & rain_cat_station == "Light Rain", na.rm = TRUE) / sum(rain_cat_station == "Light Rain", na.rm = TRUE),
+    pod_moderate = sum(rain_cat == "Moderate Rain" & rain_cat_station == "Moderate Rain", na.rm = TRUE) / sum(rain_cat_station == "Moderate Rain", na.rm = TRUE),
+    pod_heavy = sum(rain_cat == "Heavy Rain" & rain_cat_station == "Heavy Rain", na.rm = TRUE) / sum(rain_cat_station == "Heavy Rain", na.rm = TRUE),
+    pod_violent = sum(rain_cat == "Violent Rain" & rain_cat_station == "Violent Rain", na.rm = TRUE) / sum(rain_cat_station == "Violent Rain", na.rm = TRUE),
     ver = list(verify(rain_cat_station, rain_cat, frcst.type = "cat",
                       obs.type = "cat")),
     hss = map_dbl(ver, ~ .x$hss))
 
-zimbabwe_pod_hss_cats_format <- zimbabwe_pod_hss_cats %>%
+zimbabwe_pod_hss_amt_format <- zimbabwe_pod_hss_amt %>%
   dplyr::select(-ver) %>%
   pivot_wider(names_from = source, values_from = hss)
 
-zimbabwe_pod_hss_long <- zimbabwe_pod_hss_cats %>%
+zimbabwe_pod_hss_amt_long <- zimbabwe_pod_hss_amt %>%
   dplyr::select(station, source, starts_with("pod_"), hss) %>%
   pivot_longer(
     cols = c(starts_with("pod_"), "hss"),
@@ -728,11 +773,11 @@ zimbabwe_pod_hss_long <- zimbabwe_pod_hss_cats %>%
   mutate(
     metric = gsub("pod_", "", metric),
     metric = factor(metric,
-                      levels = c("light", "moderate", "heavy", "violent", "hss"),
-                      labels = c("Light Rain", "Moderate Rain", "Heavy Rain", "Violent Rain", "HSS"))
+                      levels = c("no", "light", "moderate", "heavy", "violent", "hss"),
+                      labels = c("No Rain", "Light Rain", "Moderate Rain", "Heavy Rain", "Violent Rain", "HSS"))
   )
 
-ggplot(zimbabwe_pod_hss_long, aes(x = metric, y = value, fill = source)) +
+ggplot(zimbabwe_pod_hss_amt_long, aes(x = metric, y = value, fill = source)) +
   geom_col(position = position_dodge()) +
   facet_wrap(vars(station)) +
   labs(
@@ -741,7 +786,7 @@ ggplot(zimbabwe_pod_hss_long, aes(x = metric, y = value, fill = source)) +
     fill = "Data Source",
     title = "POD and HSS by Rainfall Category and Station"
   ) +
-  theme_bw(base_size = 12) +
+  theme_minimal() +
   theme(
     axis.text.x = element_text(angle = 30, hjust = 1),
     strip.text = element_text(face = "bold")
