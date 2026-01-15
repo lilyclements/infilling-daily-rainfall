@@ -75,6 +75,15 @@ col_scale_occ <- scale_colour_manual(
   )
 )
 
+base_theme <- function(panel.grid.minor = TRUE) {
+  th <- theme_minimal() +
+    theme(strip.text = element_text(face = "bold", size = 12),
+          axis.title = element_text(size = 12),
+          legend.position = "bottom")
+  if (!panel.grid.minor) th <- th + theme(panel.grid.minor = element_blank())
+  th
+}
+
 # Monthly climatology -----------------------------------------------------
 
 zim_monthly_occ <- zimbabwe_bc_stack_occ %>%
@@ -91,10 +100,8 @@ ggplot(zim_monthly_occ,
        x = "Month",
        y = "Mean number of rain days") +
   col_scale_occ +
-  theme_minimal() +
-  theme(strip.text = element_text(face = "bold", size = 12),
-        axis.title = element_text(size = 12),
-        panel.grid.minor = element_blank())
+  base_theme() +
+  theme(panel.grid.minor = element_blank())
   
 # Question: need to present any metrics or obvious from the graph?
 
@@ -143,7 +150,12 @@ zim_annual_occ_metrics <- zim_annual_occ_wide %>%
 ggplot(zim_annual_occ, 
        aes(x = s_year, y = n_rain, colour = source)) +
   geom_line() +
-  facet_wrap(vars(station))
+  facet_wrap(vars(station)) +
+  col_scale_occ +
+  base_theme() +
+  labs(colour = "Source",
+       x = "Year",
+       y = "Number of rain days")
 
 tbl_annual_occ_nrain <- zim_annual_occ_metrics %>%
   dplyr::select(station, source, n_rain_me, n_rain_cor) %>%
@@ -162,7 +174,12 @@ tbl_annual_occ_nrain
 ggplot(zim_annual_occ, 
        aes(x = s_year, y = max_dry_spell, colour = source)) +
   geom_line() +
-  facet_wrap(vars(station))
+  facet_wrap(vars(station)) +
+  col_scale_occ +
+  base_theme() +
+  labs(colour = "Source",
+       x = "Year",
+       y = "Maximum dry spell length (days)")
 
 tbl_annual_occ_maxdry <- zim_annual_occ_metrics %>%
   dplyr::select(station, source, max_dry_spell_me, max_dry_spell_cor) %>%
@@ -197,45 +214,39 @@ wet_spells <- zimbabwe_bc_stack_occ %>%
 
 ggplot(dry_spells, aes(x = dry_spell_length, colour = source)) +
   stat_ecdf(linewidth = 1) +
-  scale_x_log10() +
+  scale_x_log10(breaks = c(1, 5, 10, 30, 50)) +
   facet_wrap(vars(station)) +
   labs(
     x = "Dry spell length (days)",
-    y = "Empirical CDF",
-    title = "Dry spell length (October to March) distribution by source and station"
+    y = "Cumulative frequency of dry spell lengths",
+    colour = "Source"
   ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    legend.position = "top",
-    panel.grid.minor = element_blank()
-  )
+  col_scale_occ +
+  base_theme(panel.grid.minor = FALSE)
 
 ggplot(wet_spells, aes(x = wet_spell_length, colour = source)) +
   stat_ecdf(linewidth = 1) +
-  scale_x_log10() +
+  scale_x_log10(breaks = c(1, 5, 10, 30, 50)) +
   facet_wrap(vars(station)) +
   labs(
     x = "Wet spell length (days)",
-    y = "Empirical CDF",
-    title = "Wet spell length (October to March) distribution by source and station"
+    y = "Cumulative frequency of wet spell lengths",
+    colour = "Source"
   ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    legend.position = "top",
-    panel.grid.minor = element_blank()
-  )
+  col_scale_occ +
+  base_theme(panel.grid.minor = FALSE)
 
 ks_results_dry <- dry_spells %>%
   group_by(station) %>%
   reframe(
-    map_dfr(c("agera5_rain", "est_loci", "est_loci_mk"), function(src) {
+    map_dfr(c("AgERA5", "LOCI", "MC LOCI"), function(src) {
       test <- ks.test(
         dry_spell_length[source == "Gauge"],
         dry_spell_length[source == src]
       )
       tibble(
         source = src,
-        statistic = unname(test$statistic),
+        `K-S test statistic` = unname(test$statistic),
         p_value = test$p.value
       )
     })
@@ -246,14 +257,14 @@ ks_results_dry
 ks_results_wet <- wet_spells %>%
   group_by(station) %>%
   reframe(
-    map_dfr(c("agera5_rain", "est_loci", "est_loci_mk"), function(src) {
+    map_dfr(c("AgERA5", "LOCI", "MC LOCI"), function(src) {
       test <- ks.test(
         wet_spell_length[source == "Gauge"],
         wet_spell_length[source == src]
       )
       tibble(
         source = src,
-        statistic = unname(test$statistic),
+        `K-S test statistic` = unname(test$statistic),
         p_value = test$p.value
       )
     })
@@ -284,7 +295,8 @@ mc_models_0 <- zimbabwe_bc_stack_occ %>%
   group_modify(~ tibble(m = list(fit_zero_order_markov(.x)))) %>%
   ungroup()
 
-doy_df <- tibble(s_doy = 1:366)
+doy_df <- tibble(s_doy = 1:366, 
+                 s_doy_date = as.Date(1:366, origin = as.Date("1999/07/31")))
 fitted_list <- list()
 for (i in seq_len(nrow(mc_models_0))) {
   
@@ -301,25 +313,23 @@ for (i in seq_len(nrow(mc_models_0))) {
     source = src,
     station = stn,
     s_doy = doy_df$s_doy,
+    s_doy_date = doy_df$s_doy_date,
     fitted = preds
   )
 }
 fitted_doy_df_0 <- bind_rows(fitted_list)
 
-ggplot(fitted_doy_df_0, aes(x = s_doy, y = fitted, color = source)) +
+ggplot(fitted_doy_df_0, aes(x = s_doy_date, y = fitted, color = source)) +
   geom_line(size = 1) +
+  scale_x_date(date_breaks = "2 months", date_labels = "%b") +
   facet_wrap(~ station, ncol = 2) +
   labs(
-    title = "Predicted Seasonal Probability of Rainday",
-    x = "Day of Year",
-    y = "Predicted Probability",
+    x = "Date",
+    y = "Rain day probability",
     color = "Source"
   ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    legend.position = "right",
-    panel.grid.minor = element_blank()
-  )
+  col_scale_occ +
+  base_theme(panel.grid.minor = FALSE)
 
 rain_ref <- fitted_doy_df_0 %>%
   filter(source == "Gauge") %>%
@@ -352,6 +362,7 @@ mc_models_1 <- zimbabwe_bc_stack_occ %>%
   ungroup()
 
 doy_df <- expand.grid(lag_rainday = c(TRUE, FALSE), s_doy = 1:366)
+doy_df$s_doy_date <- as.Date(doy_df$s_doy, origin = as.Date("1999/07/31"))
 fitted_list <- list()
 for (i in seq_len(nrow(mc_models_1))) {
   fitted_data <- doy_df
@@ -363,28 +374,22 @@ for (i in seq_len(nrow(mc_models_1))) {
   fitted_list[[i]] <- fitted_data
 }
 fitted_doy_df_1 <- bind_rows(fitted_list)
-
-ggplot(fitted_doy_df_1, aes(x = s_doy, y = fitted, color = source, 
-                            linetype = lag_rainday)) +
-  geom_line(size = 1) +
+fitted_doy_df_1$lag_rainday_fct <- 
+  factor(ifelse(fitted_doy_df_1$lag_rainday, "Rain", "No Rain"),
+         levels = c("Rain", "No Rain"))
+ggplot(fitted_doy_df_1, aes(x = s_doy_date, y = fitted, color = source)) +
+  geom_line(size = 0.7) +
+  scale_x_date(date_breaks = "2 months", date_labels = "%b") +
   labs(
-    title = "Probability of Rainday Given Previous Day State",
-    x = "Day of Year",
-    y = "Predicted Probability",
+    x = "Date",
+    y = "Rain day probability",
     color = "Source",
-    linetype = "Previous Day"
+    linetype = "Previous Day State"
   ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    legend.position = "right",
-    panel.grid.minor = element_blank()
-  ) +
-  scale_linetype_manual(
-    values = c("TRUE" = "dotted", "FALSE" = "dashed"),
-    breaks = c("TRUE", "FALSE"),   # ensures TRUE appears first in legend
-    labels = c("Rain", "Dry")
-  ) +
-  facet_grid(rows = vars(lag_rainday), cols = vars(station))
+  col_scale_occ +
+  base_theme(panel.grid.minor = FALSE) +
+  facet_grid(rows = vars(lag_rainday_fct), cols = vars(station),
+             axes = "all_x")
 
 rain_ref <- fitted_doy_df_1 %>%
   filter(source == "Gauge") %>%
@@ -399,6 +404,7 @@ rmse_rainday_1 <- fitted_doy_df_1 %>%
 # Include table in supplementary material
 rmse_rainday_1
 
+# NEXT
 ggplot(rmse_rainday_1,
        aes(x = lag_rainday, y = RMSE, fill = source)) +
   geom_col(position = position_dodge(width = 0.8), width = 0.7) +
