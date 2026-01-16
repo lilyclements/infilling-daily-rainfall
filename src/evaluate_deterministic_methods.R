@@ -66,13 +66,19 @@ col_scale <- scale_colour_manual(
 zimbabwe_bc_stack_occ <- zimbabwe_bc_stack %>%
   filter(source %in% occurrence_source)
 
+col_values <- c(
+  Gauge = "black",
+  AgERA5 = "#E31A1C",
+  LOCI = "dodgerblue2",
+  `MC LOCI` = "green4"
+)
+
 col_scale_occ <- scale_colour_manual(
-  values = c(
-    Gauge = "black",
-    AgERA5 = "#E31A1C",
-    LOCI = "dodgerblue2",
-    `MC LOCI` = "green4"
-  )
+  values =  col_values
+)
+
+col_fill_occ <- scale_fill_manual(
+  values = col_values
 )
 
 base_theme <- function(panel.grid.minor = TRUE) {
@@ -393,34 +399,28 @@ ggplot(fitted_doy_df_1, aes(x = s_doy_date, y = fitted, color = source)) +
 
 rain_ref <- fitted_doy_df_1 %>%
   filter(source == "Gauge") %>%
-  dplyr::select(station, s_doy, lag_rainday, fitted_rain = fitted)
+  dplyr::select(station, s_doy, lag_rainday_fct, fitted_rain = fitted)
 
 rmse_rainday_1 <- fitted_doy_df_1 %>%
   filter(source != "Gauge") %>%
-  left_join(rain_ref, by = c("station", "s_doy", "lag_rainday")) %>%
-  group_by(station, source, lag_rainday) %>%
+  left_join(rain_ref, by = c("station", "s_doy", "lag_rainday_fct")) %>%
+  group_by(station, source, lag_rainday_fct) %>%
   summarise(RMSE = sqrt(mean((fitted - fitted_rain)^2, na.rm = TRUE)))
 
 # Include table in supplementary material
 rmse_rainday_1
 
-# NEXT
 ggplot(rmse_rainday_1,
-       aes(x = lag_rainday, y = RMSE, fill = source)) +
+       aes(x = lag_rainday_fct, y = RMSE, fill = source)) +
   geom_col(position = position_dodge(width = 0.8), width = 0.7) +
-  facet_wrap(~ station, ncol = 3, scales = "free_y") +
+  facet_wrap(vars(station)) +
   labs(
-    x = "Lagged rainday",
+    x = "Previous Day State",
     y = "RMSE",
-    fill = "Source",
-    title = "RMSE by source, lagged rainday, and station"
-  ) +
-  theme_minimal() +
-  theme(
-    strip.text = element_text(face = "bold"),
-    axis.text.x = element_text(face = "bold")
-  )
-
+    fill = "Source"
+    ) +
+  col_fill_occ +
+  base_theme()
 
 # Rainfall occurrence detection -------------------------------------------
 
@@ -449,17 +449,15 @@ zimbabwe_pod_hss_occ <- zimbabwe_bc_comp_occ %>%
 ggplot(zimbabwe_pod_hss_occ,
        aes(x = metric, y = value, fill = source)) +
   geom_col(position = position_dodge(width = 0.8), width = 0.7) +
-  facet_wrap(~ station, ncol = 3) +
+  facet_wrap(vars(station), axes = "all_x") +
   scale_y_continuous(limits = c(0, 1)) +
   labs(
     x = "Metric",
     y = "Metric value",
-    fill = "Source",
+    fill = "Source"
   ) +
-  theme_minimal() +
-  theme(
-    strip.text = element_text(face = "bold")
-  )
+  col_fill_occ +
+  base_theme(panel.grid.minor = FALSE)
 
 # RAINFALL AMOUNTS --------------------------------------------------------
 
