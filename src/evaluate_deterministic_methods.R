@@ -50,23 +50,12 @@ occurrence_source <- c("Gauge", "AgERA5", "LOCI", "MC LOCI")
 # Don't think there's any added value including Empirical version as well
 amounts_source <- c(occurrence_source, "QM", "MC QM")
 
-col_scale <- scale_colour_manual(
-  values = c(
-    Gauge = "black",
-    AgERA5 = "#E64B35",
-    LOCI = "#0072B2",
-    `MC LOCI` = "#0072B2",
-    QM = "#E69F00",
-    `MC QM` = "#E69F00"
-  )
-)
-
 # RAINFALL OCCURRENCE -----------------------------------------------------
 
 zimbabwe_bc_stack_occ <- zimbabwe_bc_stack %>%
   filter(source %in% occurrence_source)
 
-col_values <- c(
+col_values_occ <- c(
   Gauge = "black",
   AgERA5 = "#E31A1C",
   LOCI = "dodgerblue2",
@@ -74,11 +63,11 @@ col_values <- c(
 )
 
 col_scale_occ <- scale_colour_manual(
-  values =  col_values
+  values =  col_values_occ
 )
 
 col_fill_occ <- scale_fill_manual(
-  values = col_values
+  values = col_values_occ
 )
 
 base_theme <- function(panel.grid.minor = TRUE) {
@@ -328,7 +317,7 @@ fitted_doy_df_0 <- bind_rows(fitted_list)
 ggplot(fitted_doy_df_0, aes(x = s_doy_date, y = fitted, color = source)) +
   geom_line(size = 1) +
   scale_x_date(date_breaks = "2 months", date_labels = "%b") +
-  facet_wrap(~ station, ncol = 2) +
+  facet_wrap(vars(station), axes = "all_x") +
   labs(
     x = "Date",
     y = "Rain day probability",
@@ -384,7 +373,7 @@ fitted_doy_df_1$lag_rainday_fct <-
   factor(ifelse(fitted_doy_df_1$lag_rainday, "Rain", "No Rain"),
          levels = c("Rain", "No Rain"))
 ggplot(fitted_doy_df_1, aes(x = s_doy_date, y = fitted, color = source)) +
-  geom_line(size = 0.7) +
+  geom_line(size = 0.8) +
   scale_x_date(date_breaks = "2 months", date_labels = "%b") +
   labs(
     x = "Date",
@@ -464,10 +453,27 @@ ggplot(zimbabwe_pod_hss_occ,
 zimbabwe_bc_stack_amt <- zimbabwe_bc_stack %>%
   filter(source %in% amounts_source)
 
+col_values_amt <- c(
+  Gauge = "black",
+  AgERA5 = "#E31A1C",
+  LOCI = "dodgerblue2",
+  `MC LOCI` = "green4",
+  QM = "#FF7F00",
+  `MC QM` = "gold1"
+)
+
+col_scale_amt <- scale_colour_manual(
+  values =  col_values_amt
+)
+
+col_fill_amt <- scale_fill_manual(
+  values = col_values_amt
+)
+
 # Monthly climatology -----------------------------------------------------
 
 zim_monthly_amt <- zimbabwe_bc_stack_amt %>%
-  group_by(station, source, month, year) %>%
+  group_by(station, source, month_abb, year) %>%
   summarise(n_rain = sum(rainday, na.rm = TRUE),
             t_rain = sum(rr, na.rm = TRUE),
             mean_rain = t_rain / n_rain,
@@ -479,22 +485,37 @@ zim_monthly_amt <- zimbabwe_bc_stack_amt %>%
             max_rain = mean(max_rain, na.rm = TRUE))
 
 ggplot(zim_monthly_amt, 
-       aes(x = month, y = t_rain, colour = source, group = source)) +
+       aes(x = month_abb, y = t_rain, colour = source, group = source)) +
   geom_point() +
   geom_line() +
-  facet_wrap(vars(station))
+  facet_wrap(vars(station)) +
+  labs(colour = "Source",
+       x = "Year",
+       y = "Mean monthly rainfall (mm)") +
+  col_scale_amt +
+  base_theme()
 
 ggplot(zim_monthly_amt, 
        aes(x = month, y = mean_rain, colour = source, group = source)) +
   geom_point() +
   geom_line() +
-  facet_wrap(vars(station))
+  facet_wrap(vars(station)) +
+  labs(colour = "Source",
+       x = "Year",
+       y = "Mean rainfall per rain day (mm/rain day)") +
+  col_scale_amt +
+  base_theme()
 
 ggplot(zim_monthly_amt, 
-       aes(x = month, y = max_rain, colour = source, group = source)) +
+       aes(x = month_abb, y = max_rain, colour = source, group = source)) +
   geom_point() +
   geom_line() +
-  facet_wrap(vars(station))
+  facet_wrap(vars(station)) +
+  labs(colour = "Source",
+       x = "Year",
+       y = "Maximum daily rainfall (mm)") +
+  col_scale_amt +
+  base_theme()
 
 # Annual summaries --------------------------------------------------------
 
@@ -514,7 +535,7 @@ zim_annual_amt_station <- zim_annual_amt %>%
 
 zim_annual_amt_wide <- zim_annual_amt %>% 
   filter(source != "Gauge") %>%
-  left_join(zim_annual_station_amt, by = c("station", "s_year"))
+  left_join(zim_annual_amt_station, by = c("station", "s_year"))
 
 zim_annual_amt_wide <- zim_annual_amt_wide %>% 
   group_by(station, source) %>%
@@ -555,11 +576,16 @@ linetype_scale <- scale_linetype_manual(
 
 # Annual total rainfall
 ggplot(zim_annual_amt, 
-       aes(x = s_year, y = t_rain, colour = source, linetype = source)) +
+       aes(x = s_year, y = t_rain, colour = source)) +
   geom_line() +
   facet_wrap(vars(station)) +
-  col_scale + 
-  linetype_scale
+  labs(colour = "Source",
+       x = "Year",
+       y = "Total rainfall (mm)") +
+  col_scale_amt + 
+  base_theme()
+
+# Question: Graph in supplementary material? Or can we make the graph readable?
 
 tbl_annual_amt_t_rain <- zim_annual_amt_metrics %>%
   dplyr::select(station, source, t_rain_me, t_rain_cor) %>%
@@ -573,11 +599,14 @@ tbl_annual_amt_t_rain
 
 # Annual mean rainfall
 ggplot(zim_annual_amt, 
-       aes(x = s_year, y = mean_rain, colour = source, linetype = source)) +
+       aes(x = s_year, y = mean_rain, colour = source)) +
   geom_line() +
   facet_wrap(vars(station)) +
-  col_scale +
-  linetype_scale
+  labs(colour = "Source",
+       x = "Year",
+       y = "Mean rainfall per rain day (mm/rain day)") +
+  col_scale_amt + 
+  base_theme()
 
 tbl_annual_amt_mean_rain <- zim_annual_amt_metrics %>%
   dplyr::select(station, source, mean_rain_me, mean_rain_cor) %>%
@@ -591,11 +620,14 @@ tbl_annual_amt_mean_rain
 
 # Annual max rainfall
 ggplot(zim_annual_amt, 
-       aes(x = s_year, y = max_rain, colour = source, linetype = source)) +
-  geom_line(size = 0.6) +
+       aes(x = s_year, y = max_rain, colour = source)) +
+  geom_line() +
   facet_wrap(vars(station)) +
-  col_scale +
-  linetype_scale
+  labs(colour = "Source",
+       x = "Year",
+       y = "Maximum daily rainfall (mm)") +
+  col_scale_amt + 
+  base_theme()
 
 tbl_annual_amt_max_rain <- zim_annual_amt_metrics %>%
   dplyr::select(station, source, max_rain_me, max_rain_cor) %>%
@@ -606,7 +638,6 @@ tbl_annual_amt_max_rain <- zim_annual_amt_metrics %>%
   pivot_wider(names_from = source, values_from = value) %>%
   arrange(metric, station)
 tbl_annual_amt_max_rain
-
 
 # Seasonal ----------------------------------------------------------------
 
@@ -627,7 +658,8 @@ mc_models_0_amounts <- zimbabwe_bc_stack_amt %>%
   group_modify(~ tibble(m = list(fit_zero_order_markov_amounts(.x)))) %>%
   ungroup()
 
-doy_df <- tibble(s_doy = 1:366)
+doy_df <- tibble(s_doy = 1:366,
+                 s_doy_date = as.Date(1:366, origin = as.Date("1999/07/31")))
 fitted_list <- list()
 for (i in seq_len(nrow(mc_models_0_amounts))) {
   
@@ -641,29 +673,25 @@ for (i in seq_len(nrow(mc_models_0_amounts))) {
     source = src,
     station = stn,
     s_doy = doy_df$s_doy,
+    s_doy_date = doy_df$s_doy_date,
     fitted = preds
   )
 }
 fitted_doy_df_0_amounts <- bind_rows(fitted_list)
 
 ggplot(fitted_doy_df_0_amounts, 
-       aes(x = s_doy, y = fitted, color = source, linetype = source)) +
-  geom_line(size = 1) +
-  facet_wrap(vars(station)) +
+       aes(x = s_doy_date, y = fitted, color = source)) +
+  geom_line(size = 0.8) +
+  scale_x_date(date_breaks = "2 months", date_labels = "%b") +
+  facet_wrap(vars(station), axes = "all_x") +
   labs(
-    title = "Mean Rainfall Amount on Rainy Days",
-    x = "Day of Year",
-    y = "Rainfall (mm)",
+    x = "Date",
+    y = "Mean rainfall per rain day (mm/rain day)",
     color = "Source",
     linetype = "Source"
   ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    legend.position = "right",
-    panel.grid.minor = element_blank()
-  ) +
-  col_scale + 
-  linetype_scale
+  col_scale_amt + 
+  base_theme()
 
 rain_ref <- fitted_doy_df_0_amounts %>%
   filter(source == "Gauge") %>%
@@ -696,6 +724,7 @@ mc_models_1_amounts <- zimbabwe_bc_stack_amt %>%
   ungroup()
 
 doy_df <- expand.grid(lag_rainday = c(TRUE, FALSE), s_doy = 1:366)
+doy_df$s_doy_date <- as.Date(doy_df$s_doy, origin = as.Date("1999/07/31"))
 fitted_list <- list()
 for (i in seq_len(nrow(mc_models_1_amounts))) {
   fitted_data <- doy_df
@@ -707,56 +736,50 @@ for (i in seq_len(nrow(mc_models_1_amounts))) {
   fitted_list[[i]] <- fitted_data
 }
 fitted_doy_df_1_amounts <- bind_rows(fitted_list)
+fitted_doy_df_1_amounts$lag_rainday_fct <- 
+  factor(ifelse(fitted_doy_df_1_amounts$lag_rainday, "Rain", "No Rain"),
+         levels = c("Rain", "No Rain"))
 
 ggplot(fitted_doy_df_1_amounts, 
-       aes(x = s_doy, y = fitted, color = source, linetype = source)) +
-  geom_line(size = 1) +
-  facet_grid(vars(lag_rainday), vars(station)) +
+       aes(x = s_doy_date, y = fitted, color = source)) +
+  geom_line(size = 0.8) +
+  scale_x_date(date_breaks = "2 months", date_labels = "%b") +
+  facet_grid(vars(lag_rainday_fct), vars(station), axes = "all_x") +
   labs(
-    title = "Mean Rainfall Amount on Rainy Days",
-    x = "Day of Year",
-    y = "Rainfall (mm)",
-    color = "Source",
-    linetype = "Source"
+    x = "Date",
+    y = "Mean rainfall per rain day (mm/rain day)",
+    color = "Source"
   ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    legend.position = "right",
-    panel.grid.minor = element_blank()
-  ) +
-  col_scale + 
-  linetype_scale
+  base_theme() +
+  col_scale_amt
 
 rain_ref <- fitted_doy_df_1_amounts %>%
   filter(source == "Gauge") %>%
-  dplyr::select(station, s_doy, lag_rainday, fitted_rain = fitted)
+  dplyr::select(station, s_doy, lag_rainday_fct, fitted_rain = fitted)
 
 rmse_rain_amounts_1 <- fitted_doy_df_1_amounts %>%
   filter(source != "Gauge") %>%
-  left_join(rain_ref, by = c("station", "s_doy", "lag_rainday")) %>%
-  group_by(station, source, lag_rainday) %>%
+  left_join(rain_ref, by = c("station", "s_doy", "lag_rainday_fct")) %>%
+  group_by(station, source, lag_rainday_fct) %>%
   summarise(RMSE = sqrt(mean((fitted - fitted_rain)^2, na.rm = TRUE)))
 
 # Include table in supplementary material
 rmse_rain_amounts_1
 
 ggplot(rmse_rain_amounts_1,
-       aes(x = lag_rainday, y = RMSE, fill = source)) +
+       aes(x = lag_rainday_fct, y = RMSE, fill = source)) +
   geom_col(position = position_dodge(width = 0.8), width = 0.7) +
-  facet_wrap(~ station, ncol = 3, scales = "free_y") +
+  facet_wrap(vars(station), axes = "all_x") +
   labs(
     x = "Lagged rainday",
     y = "RMSE",
     fill = "Source",
-    title = "RMSE by source, lagged rainday, and station"
   ) +
-  theme_minimal() +
-  theme(
-    strip.text = element_text(face = "bold"),
-    axis.text.x = element_text(face = "bold")
-  )
+  base_theme() +
+  col_fill_amt
 
 # POD and HSS for rainfall categories -------------------------------------
+# NEXT
 
 cat_labs <- c("No Rain", "Light Rain", 
               "Moderate Rain", "Heavy Rain", 
