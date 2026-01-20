@@ -779,7 +779,6 @@ ggplot(rmse_rain_amounts_1,
   col_fill_amt
 
 # POD and HSS for rainfall categories -------------------------------------
-# NEXT
 
 cat_labs <- c("No Rain", "Light Rain", 
               "Moderate Rain", "Heavy Rain", 
@@ -841,11 +840,10 @@ ggplot(zimbabwe_pod_hss_amt_long, aes(x = metric, y = value, fill = source)) +
   labs(
     x = "Rainfall Category / Metric",
     y = "Score",
-    fill = "Data Source",
-    title = "POD and HSS by Rainfall Category and Station"
+    fill = "Source",
   ) +
-  theme_minimal() +
+  col_fill_amt +
+  base_theme() +
   theme(
-    axis.text.x = element_text(angle = 30, hjust = 1),
-    strip.text = element_text(face = "bold")
+    axis.text.x = element_text(angle = 25, hjust = 1),
   )
