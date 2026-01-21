@@ -197,7 +197,6 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
                      names = FALSE)
       t_d <- t0
       t_w <- t0
-      #print(m)
       # Set to TRUE if probabilities converged to within tolerance of targets
       converged <- FALSE
       # Set to TRUE if probabilities converged to a value but not within tolerance
@@ -206,8 +205,6 @@ markov_thresholds <- function(data, obs_col = "obs", est_col = "est",
       n_same <- 0
       # Iterate to converge to target probabilities
       for (i in 1:max_it) {
-        #print(t_w)
-        #print(t_d)
         res <- data_m %>%
           group_by(year, season) %>%
           group_modify(~{

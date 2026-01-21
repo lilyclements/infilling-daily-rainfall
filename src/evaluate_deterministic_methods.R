@@ -119,6 +119,10 @@ zim_annual_dryspells <- zimbabwe_bc_stack_occ %>%
 zim_annual_occ <- left_join(zim_annual_occ, zim_annual_dryspells, 
                             by = c("station", "source", "s_year"))
 
+# QC problem in station data at Chisumbanje in 2002 and 2009
+# TODO Remove this after QC done
+zim_annual_occ$max_dry_spell <- ifelse(zim_annual_occ$max_dry_spell > 100, NA, zim_annual_occ$max_dry_spell)
+
 zim_annual_occ_station <- zim_annual_occ %>% 
   filter(source == "Gauge") %>% 
   rename(n_rain_station = n_rain,
@@ -131,15 +135,15 @@ zim_annual_occ_wide <- zim_annual_occ %>%
 
 zim_annual_occ_wide <- zim_annual_occ_wide %>% 
   group_by(station, source) %>%
-  mutate(n_rain_diff = n_rain_station - n_rain,
-         max_dry_spell_diff = max_dry_spell_station - max_dry_spell)
+  mutate(n_rain_diff = n_rain - n_rain_station,
+         max_dry_spell_diff = max_dry_spell - max_dry_spell_station)
 
 zim_annual_occ_metrics <- zim_annual_occ_wide %>% 
   group_by(station, source) %>%
   summarise(n_rain_me = mean(n_rain_diff, na.rm = TRUE),
             max_dry_spell_me = mean(max_dry_spell_diff, na.rm = TRUE),
             n_rain_cor = cor(n_rain, n_rain_station, use = "complete.obs"),
-            max_dry_spell_cor = cor(max_dry_spell, max_dry_spell_station))
+            max_dry_spell_cor = cor(max_dry_spell, max_dry_spell_station, use = "complete.obs"))
 
 # Annual number of rain days
 ggplot(zim_annual_occ, 
@@ -165,7 +169,6 @@ tbl_annual_occ_nrain <- zim_annual_occ_metrics %>%
 tbl_annual_occ_nrain
 
 # Annual length of longest dry spell (October to March)
-# QC problem in station data at Chisumbanje in 2002 and 2009
 ggplot(zim_annual_occ, 
        aes(x = s_year, y = max_dry_spell, colour = source)) +
   geom_line() +
@@ -539,9 +542,9 @@ zim_annual_amt_wide <- zim_annual_amt %>%
 
 zim_annual_amt_wide <- zim_annual_amt_wide %>% 
   group_by(station, source) %>%
-  mutate(t_rain_diff = t_rain_station - t_rain,
-         max_rain_diff = max_rain_station - max_rain,
-         mean_rain_diff = mean_rain_station - mean_rain)
+  mutate(t_rain_diff = t_rain - t_rain_station,
+         max_rain_diff = max_rain - max_rain_station,
+         mean_rain_diff = mean_rain - mean_rain_station)
 
 zim_annual_amt_metrics <- zim_annual_amt_wide %>% 
   group_by(station, source) %>%
