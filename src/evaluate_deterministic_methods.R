@@ -451,6 +451,9 @@ ggplot(zimbabwe_pod_hss_occ,
   col_fill_occ +
   base_theme(panel.grid.minor = FALSE)
 
+# Include table in supplementary material
+zimbabwe_pod_hss_occ
+
 # RAINFALL AMOUNTS --------------------------------------------------------
 
 zimbabwe_bc_stack_amt <- zimbabwe_bc_stack %>%
@@ -493,21 +496,31 @@ ggplot(zim_monthly_amt,
   geom_line() +
   facet_wrap(vars(station)) +
   labs(colour = "Source",
-       x = "Year",
+       x = "Month",
        y = "Mean monthly rainfall (mm)") +
   col_scale_amt +
   base_theme()
 
 ggplot(zim_monthly_amt, 
-       aes(x = month, y = mean_rain, colour = source, group = source)) +
+       aes(x = month_abb, y = mean_rain, colour = source, group = source)) +
   geom_point() +
   geom_line() +
   facet_wrap(vars(station)) +
   labs(colour = "Source",
-       x = "Year",
+       x = "Month",
        y = "Mean rainfall per rain day (mm/rain day)") +
   col_scale_amt +
   base_theme()
+
+# Include in supplementary material?
+zim_monthly_amt_metrics <- zim_monthly_amt %>%
+  dplyr::select(station, source, month_abb, mean_rain) %>%
+  pivot_wider(names_from = source, values_from = mean_rain) %>%
+  pivot_longer(cols = -c(station, month_abb, Gauge),
+               names_to = "source", values_to = "mean_rain_src") %>%
+  filter(!is.na(Gauge), !is.na(mean_rain_src)) %>%
+  group_by(station, source) %>%
+  summarise(RMSE = sqrt(mean((mean_rain_src - Gauge)^2)))
 
 ggplot(zim_monthly_amt, 
        aes(x = month_abb, y = max_rain, colour = source, group = source)) +
@@ -515,7 +528,7 @@ ggplot(zim_monthly_amt,
   geom_line() +
   facet_wrap(vars(station)) +
   labs(colour = "Source",
-       x = "Year",
+       x = "Month",
        y = "Maximum daily rainfall (mm)") +
   col_scale_amt +
   base_theme()
@@ -526,6 +539,9 @@ zim_annual_amt <- zimbabwe_bc_stack_amt %>%
   group_by(station, source, s_year) %>%
   summarise(n_rain = sum(rr > 0.85, na.rm = TRUE),
             t_rain = sum(rr, na.rm = TRUE),
+            # QC problem in station data at Chisumbanje in 2002 and 2009
+            # TODO Remove this after QC done
+            t_rain = ifelse(t_rain == 0, NA, t_rain),
             mean_rain = t_rain / n_rain,
             max_rain = max(rr, na.rm = TRUE)) %>%
   ungroup()
@@ -554,28 +570,6 @@ zim_annual_amt_metrics <- zim_annual_amt_wide %>%
             t_rain_cor = cor(t_rain, t_rain_station, use = "complete.obs"),
             max_rain_cor = cor(max_rain, max_rain_station, use = "complete.obs"),
             mean_rain_cor = cor(mean_rain, mean_rain_station, use = "complete.obs"))
-
-col_scale <- scale_colour_manual(
-  values = c(
-    Gauge = "black",
-    AgERA5 = "#E64B35",
-    LOCI = "#0072B2",
-    `MC LOCI` = "#0072B2",
-    QM = "#E69F00",
-    `MC QM` = "#E69F00"
-  )
-)
-
-linetype_scale <- scale_linetype_manual(
-  values = c(
-    Gauge = "solid",
-    AgERA5 = "solid",
-    LOCI = "solid",
-    `MC LOCI` = "dashed",
-    QM = "solid",
-    `MC QM` = "dashed"
-  )
-)
 
 # Annual total rainfall
 ggplot(zim_annual_amt, 
