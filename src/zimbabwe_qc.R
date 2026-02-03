@@ -159,8 +159,8 @@ display_daily(zim_five_stations %>% filter(station == "Plumtree" & year == 2019)
 # tr rain only from 24th Jan - 12th March.
 # Drought was reported / Severe El Nino year [https://www.weatherzw.org.zw/news/drought-occurrence-in-zimbabwe/]
 # From this image it looks plausible https://www.mdpi.com/2071-1050/12/3/752#sustainability-12-00752-f003
-display_daily(zim_five_stations %>% filter(station == "Buffalo_Range" & year == 2021),
-              Stations = "Buffalo_Range", Years = 2021, Variables = "rain")
+display_daily(zim_five_stations %>% filter(station == "Buffalo_Range" & year == 1992),
+              Stations = "Buffalo_Range", Years = 1992, Variables = "rain")
 # Satellite (tamsat) data shows NA values from 11th-25th. Otherwise, all values are 0, except for February 2nd.
 # TODO: Not sure how to handle this.
 
