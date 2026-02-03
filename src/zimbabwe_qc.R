@@ -118,8 +118,7 @@ if(nrow(raindays_check) > 0) View(raindays_check)
 # Dry months check - strict =======================================================================
 # Some instances of 0mm rain in some years for the stations in the rainy period. 
 # Some suspicious. E.g., Chisumbanje in the 2002-2003 period and 2009-2010 period. 
-# Mostly occurring in Nov and Mar - the beginning and end of the rainy seasons. Hard to tell if this is ordinary or not.
-# I might want to check with Roger for his view since he knows the region better.
+# Mostly occurring in Nov and Mar - the beginning and end of the rainy seasons. This is suspicious. 
 
 drymonths_check <- zim_five_stations %>%
   filter(!month %in% 4:10) %>%
@@ -151,26 +150,75 @@ display_daily(zim_five_stations %>% filter(station == "Plumtree" & year == 2019)
 # and supported here: https://www.weatherzw.org.zw/news/drought-occurrence-in-zimbabwe/
 # Buffalo Range, Chisumbanje, and Masvingo are not *too* vulnerable.
 
-# 1. Buffalo Range, 1992: Plausible.
+# Note: for 1, 5, 9 we check satellite data. For 2-4, 6-8 we replace as NA.
+
+# 1. Buffalo Range, 1992: Unlikely, but is a drought year. 
+# Satellite (tamsat) data shows NA values from 11th-25th. Otherwise, all values are 0, except for February 2nd.
+# Not sure how to handle this.
 # No rain in February at all.
-# No rain from 24th Jan - 12th March (> 0.85mm), this looks plausible.
+# tr rain only from 24th Jan - 12th March.
 # Drought was reported / Severe El Nino year [https://www.weatherzw.org.zw/news/drought-occurrence-in-zimbabwe/]
 # From this image it looks plausible https://www.mdpi.com/2071-1050/12/3/752#sustainability-12-00752-f003
+display_daily(zim_five_stations %>% filter(station == "Buffalo_Range" & year == 2021),
+              Stations = "Buffalo_Range", Years = 2021, Variables = "rain")
+# Satellite (tamsat) data shows NA values from 11th-25th. Otherwise, all values are 0, except for February 2nd.
+# TODO: Not sure how to handle this.
 
-# 2. Buffalo Range, 2004 and 2021: Both had no rain in March: Suspicious.
+# 2. Buffalo Range, 2004 and 2021: Both had no rain in March: Suspicious and replace 0 as NA
+# 2004: set March as NAs
 # 2004: 0mm, 3mm, 2mm, 0mm rain on February 26th-29th; 13.2mm on April 1st, then <0.85mm until April 11th. Maybe coincidence, but slightly suspicious. 
 # From https://www.mdpi.com/2071-1050/12/3/752#sustainability-12-00752-f003 it is possible?
+# 2021: March is NA. With March NA, then APril NA.
 # 2021: 0mm 19th-26th Feb; 15mm 27th Feb; 0.4mm 28th Feb. 0mm for all of April, until May 23rd. Might have been a short rainy season.
 
 # 3. Chisumbanje: No rain in March: Unusual but not impossible. 
 
 # a) 1982: There's also no rain in April, May, June. May be plausible and not unusual. 
-# b) 2005: No rain in March, until November. Slightly unusual but not impossible.
+# March NA, April NA; (Keep May, June as 0)
+display_daily(zim_five_stations %>% filter(station == "Chisumbanje" & year == 1982),
+              Stations = "Chisumbanje", Years = 1982, Variables = "rain")
+
+zim_five_stations <- zim_five_stations %>%
+  dplyr::mutate(rain = ifelse(station == "Chisumbanje" & year == 1982 & month %in% c(3, 4),
+                              NA,
+                              rain))
+
+# b) 2005: No rain in March, until September Slightly unusual but not impossible.
+# March NA, April NA; (Keep others as 0)
+display_daily(zim_five_stations %>% filter(station == "Chisumbanje" & year == 2005),
+              Stations = "Chisumbanje", Years = 2005, Variables = "rain")
+
+zim_five_stations <- zim_five_stations %>%
+  dplyr::mutate(rain = ifelse(station == "Chisumbanje" & year == 2005 & month %in% c(3, 4),
+                              NA,
+                              rain))
+
 # c) 2008 and 2011: No rain in March, until October. Slightly unusual but not impossible.
+# March NA, April NA; (Keep others as 0)
+display_daily(zim_five_stations %>% filter(station == "Chisumbanje" & year == 2008),
+              Stations = "Chisumbanje", Years = 2008, Variables = "rain")
+
+zim_five_stations <- zim_five_stations %>%
+  dplyr::mutate(rain = ifelse(station == "Chisumbanje" & year == 2008 & month %in% c(3, 4),
+                              NA,
+                              rain))
+
 # d) 2009: No rain in March for the rest of the year. Suspicious: There's then no rainy season in this year (2009-2010 are all 0 in the rainy season, see 4.)  
 # For 2009 (d) there was an El Nino drought reported in Manicaland (Chisumbanje) so this could be plausible. 
 
 # 4. Chisumbanje, 2002-2003; 2009-2010: Looks implausible, but they were El Nino Years, and the graphs do support it.
+# Set all as NA in this 2002-2003 "rainfall" period
+# Set all as NA from 2009 March to 2010 April
+display_daily(zim_five_stations %>% filter(station == "Chisumbanje" & year == 2010),
+              Stations = "Chisumbanje", Years = 2010, Variables = "rain")
+
+zim_five_stations <- zim_five_stations %>%
+  dplyr::mutate(rain = ifelse(station == "Chisumbanje" & year == 2002 & month %in% c(10, 11, 12), NA, rain)) %>%
+  dplyr::mutate(rain = ifelse(station == "Chisumbanje" & year == 2003 & month %in% c(1, 2, 3, 4), NA, rain)) %>%
+  dplyr::mutate(rain = ifelse(station == "Chisumbanje" & year == 2009 & month %in% c(10, 11, 12), NA, rain)) %>%
+  dplyr::mutate(rain = ifelse(station == "Chisumbanje" & year == 2010 & month %in% c(1, 2, 3, 4), NA, rain))
+
+
 # There's no rainfall in the 5 month period we are looking at.
 # Almost certainly incorrectly entered missing values. We'll probably change this to NA. 
 # Chisumbanje is close to Buffalo Range, so I'd have expected to see similar 0mm patterns in Buffalo Range if these values were real.
@@ -183,22 +231,66 @@ display_daily(zim_five_stations %>% filter(station == "Plumtree" & year == 2019)
 # This is a severe El Nino year and affects that area, so I think this is plausible. [https://www.weatherzw.org.zw/news/drought-occurrence-in-zimbabwe/]
 # Plausible from this image https://www.mdpi.com/2071-1050/12/3/752#sustainability-12-00752-f003
 
+display_daily(zim_five_stations %>% filter(station == "Chisumbanje" & year == 2016),
+              Stations = "Chisumbanje", Years = 2016, Variables = "rain")
+# unusual pattern -- get rain in NOvember, and then a dry month in December. January no rain until 17th January
+# Satellite (tamsat) data shows rainfall values on 12, 13, 14, 15, 18th December 
+# 2015-12-12	2.60
+# 2015-12-13	18.50
+# 2015-12-14	13.20
+# 2015-12-15	12.50
+# 2015-12-16	.00
+# 2015-12-17	.00
+# 2015-12-18	9.50
+# AGrees that there is less rain in November and January, but still rainfall. 
+# TODO: Set December 2015 as NA?
+
 # 6. Masvingo, 2004 March: Unclear
+# Replace as NAs? - rainfall in surrounding months.
 # high rainfall at the end of Feb (26th: 22.4mm; 27th: 25.2mm; 28th: 83.9mm; 29th: 0.2mm) and start of April (1st) so maybe odd? 
 # Appears to be some signs of drought - https://www.mdpi.com/2071-1050/12/3/752#sustainability-12-00752-f003 - but unsure why 2003-04 is worse for Masvingo than 2015-16?
+display_daily(zim_five_stations %>% filter(station == "Masvingo" & year == 2004),
+              Stations = "Masvingo", Years = 2004, Variables = "rain")
+
+zim_five_stations <- zim_five_stations %>%
+  dplyr::mutate(rain = ifelse(station == "Masvingo" & year == 2004 & month %in% c(3), NA, rain))
 
 # 7. Mt Darwin 1994 November: Plausible (El Nino)
+# November -- likely to be a mistake, with rainfall in Oct/Dec. Set as NA
+display_daily(zim_five_stations %>% filter(station == "Mt_Darwin" & year == 1994),
+              Stations = "Mt_Darwin", Years = 1994, Variables = "rain")
+
+zim_five_stations <- zim_five_stations %>%
+  dplyr::mutate(rain = ifelse(station == "Mt_Darwin" & year == 1994 & month %in% c(11), NA, rain))
+
 # Some rainfall in October and December. The average is 5 days so not impossible. 
 # Flagged as a moderate El Nino year, so possible. [https://www.weatherzw.org.zw/news/drought-occurrence-in-zimbabwe/]
 # And in a drought zone here: https://www.mdpi.com/2071-1050/12/3/752#sustainability-12-00752-f003
 
 # 8. Mt Darwin 2020 March: Plausible
+# Set as NA in March 2020
+display_daily(zim_five_stations %>% filter(station == "Mt_Darwin" & year == 2020),
+              Stations = "Mt_Darwin", Years = 2020, Variables = "rain")
+
+zim_five_stations <- zim_five_stations %>%
+  dplyr::mutate(rain = ifelse(station == "Mt_Darwin" & year == 2020 & month %in% c(3), NA, rain))
 # Little rainfall at the end of Feb, and no rainfall until November. 
 
 #9. Plumtree 2019 March: Plausible
+# Replace as NAs? - rainfall in surrounding months.
+# Check Satellite data for this one?
 # Feb 19th - April 8th is <0.85mm rainfall.  
 # This was a drought year, but it is unclear where in ZM [Drought Resilience Profiles Zimbabwe - https://www.ciwaprogram.org/wp-content/uploads/SADRI_Drought_Resilience_Profile_Zimbabwe.pdf]
 # Looks like it could have affected Plumtree here: https://www.mdpi.com/2071-1050/12/3/752#sustainability-12-00752-f003
+display_daily(zim_five_stations %>% filter(station == "Plumtree" & year == 2019),
+              Stations = "Plumtree", Years = 2019, Variables = "rain")
+# Satellite data shows rainfall on two days in March: (03-03) 12.60, (27-03) 10.60
+# TODO: Replace March as NA? (not April: Values in April).
+
+# zim_five_stations <- zim_five_stations %>%
+#   dplyr::mutate(rain = ifelse(station == "Plumtree" & year == 2019 & month %in% c(3), NA, rain))
+
+# SImple rule (if NA in March, and April, set both as NA etc etc. )
 
 ### TODO ###########################################################
 # 
