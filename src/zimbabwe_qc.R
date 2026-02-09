@@ -150,18 +150,13 @@ display_daily(zim_five_stations %>% filter(station == "Plumtree" & year == 2019)
 # and supported here: https://www.weatherzw.org.zw/news/drought-occurrence-in-zimbabwe/
 # Buffalo Range, Chisumbanje, and Masvingo are not *too* vulnerable.
 
-# Note: for 1, 5, 9 we check satellite data. For 2-4, 6-8 we replace as NA.
-
 # 1. Buffalo Range, 1992: Unlikely, but is a drought year. 
-# Satellite (tamsat) data shows NA values from 11th-25th. Otherwise, all values are 0, except for February 2nd.
-# Not sure how to handle this.
 # No rain in February at all.
 # tr rain only from 24th Jan - 12th March.
 # Drought was reported / Severe El Nino year [https://www.weatherzw.org.zw/news/drought-occurrence-in-zimbabwe/]
 # From this image it looks plausible https://www.mdpi.com/2071-1050/12/3/752#sustainability-12-00752-f003
 display_daily(zim_five_stations %>% filter(station == "Buffalo_Range" & year == 1992),
               Stations = "Buffalo_Range", Years = 1992, Variables = "rain")
-# Satellite (tamsat) data shows NA values from 11th-25th. Otherwise, all values are 0, except for February 2nd.
 # TODO: Not sure how to handle this.
 
 # 2. Buffalo Range, 2004 and 2021: Both had no rain in March: Suspicious and replace 0 as NA
@@ -234,15 +229,6 @@ zim_five_stations <- zim_five_stations %>%
 display_daily(zim_five_stations %>% filter(station == "Chisumbanje" & year == 2016),
               Stations = "Chisumbanje", Years = 2016, Variables = "rain")
 # unusual pattern -- get rain in NOvember, and then a dry month in December. January no rain until 17th January
-# Satellite (tamsat) data shows rainfall values on 12, 13, 14, 15, 18th December 
-# 2015-12-12	2.60
-# 2015-12-13	18.50
-# 2015-12-14	13.20
-# 2015-12-15	12.50
-# 2015-12-16	.00
-# 2015-12-17	.00
-# 2015-12-18	9.50
-# AGrees that there is less rain in November and January, but still rainfall. 
 # TODO: Set December 2015 as NA?
 
 # 6. Masvingo, 2004 March: Unclear
@@ -278,13 +264,11 @@ zim_five_stations <- zim_five_stations %>%
 
 #9. Plumtree 2019 March: Plausible
 # Replace as NAs? - rainfall in surrounding months.
-# Check Satellite data for this one?
 # Feb 19th - April 8th is <0.85mm rainfall.  
 # This was a drought year, but it is unclear where in ZM [Drought Resilience Profiles Zimbabwe - https://www.ciwaprogram.org/wp-content/uploads/SADRI_Drought_Resilience_Profile_Zimbabwe.pdf]
 # Looks like it could have affected Plumtree here: https://www.mdpi.com/2071-1050/12/3/752#sustainability-12-00752-f003
 display_daily(zim_five_stations %>% filter(station == "Plumtree" & year == 2019),
               Stations = "Plumtree", Years = 2019, Variables = "rain")
-# Satellite data shows rainfall on two days in March: (03-03) 12.60, (27-03) 10.60
 # TODO: Replace March as NA? (not April: Values in April).
 
 # zim_five_stations <- zim_five_stations %>%
