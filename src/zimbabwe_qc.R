@@ -157,7 +157,7 @@ display_daily(zim_five_stations %>% filter(station == "Plumtree" & year == 2019)
 # From this image it looks plausible https://www.mdpi.com/2071-1050/12/3/752#sustainability-12-00752-f003
 display_daily(zim_five_stations %>% filter(station == "Buffalo_Range" & year == 1992),
               Stations = "Buffalo_Range", Years = 1992, Variables = "rain")
-# TODO: Not sure how to handle this.
+# Since this was a big drought year, and the month is surrounded by 0s I suggest leave these values as 0.
 
 # 2. Buffalo Range, 2004 and 2021: Both had no rain in March: Suspicious and replace 0 as NA
 # 2004: set March as NAs
@@ -229,7 +229,9 @@ zim_five_stations <- zim_five_stations %>%
 display_daily(zim_five_stations %>% filter(station == "Chisumbanje" & year == 2016),
               Stations = "Chisumbanje", Years = 2016, Variables = "rain")
 # unusual pattern -- get rain in NOvember, and then a dry month in December. January no rain until 17th January
-# TODO: Set December 2015 as NA?
+# No rain in December would be highly unusual. So I agree that without more information that confirms these are true 0s, the sensible option is to make these values NA.
+zim_five_stations <- zim_five_stations %>%
+  dplyr::mutate(rain = ifelse(station == "Chisumbanje" & year == 2015 & month %in% c(12), NA, rain)) %>%
 
 # 6. Masvingo, 2004 March: Unclear
 # Replace as NAs? - rainfall in surrounding months.
@@ -269,12 +271,12 @@ zim_five_stations <- zim_five_stations %>%
 # Looks like it could have affected Plumtree here: https://www.mdpi.com/2071-1050/12/3/752#sustainability-12-00752-f003
 display_daily(zim_five_stations %>% filter(station == "Plumtree" & year == 2019),
               Stations = "Plumtree", Years = 2019, Variables = "rain")
-# TODO: Replace March as NA? (not April: Values in April).
+# Replace March as NA (not April: Values in April).
+# Since there are rainfall amounts at the end of February, the March values are suspicious, the sensible option is to make these values NA.
+zim_five_stations <- zim_five_stations %>%
+  dplyr::mutate(rain = ifelse(station == "Plumtree" & year == 2019 & month %in% c(3), NA, rain))
 
-# zim_five_stations <- zim_five_stations %>%
-#   dplyr::mutate(rain = ifelse(station == "Plumtree" & year == 2019 & month %in% c(3), NA, rain))
-
-# SImple rule (if NA in March, and April, set both as NA etc etc. )
+# Simple rule (if NA in March, and April, set both as NA etc etc. )
 
 ### TODO ###########################################################
 # 
